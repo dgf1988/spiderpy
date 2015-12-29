@@ -140,8 +140,8 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(sql,
                          'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
         sqlfrom.clear()
-        self.assertEqual(sql, '')
-        self.assertFalse(sql)
+        self.assertEqual(sql, 'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
+        self.assertTrue(sql)
 
 if __name__ == '__main__':
     unittest.main()

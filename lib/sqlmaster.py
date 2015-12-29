@@ -810,7 +810,7 @@ class SqlFrom(object):
     def __init__(self, table: str):
         if not table:
             raise ValueError('empty table name')
-        self.__sql__ = dict(table=table)
+        self.__sql__ = SqlNode(table=table)
 
     def where(self, *where, **kwargs):
         self.__sql__.where = SqlWhere(*where, **kwargs)
