@@ -121,27 +121,28 @@ class MyTestCase(unittest.TestCase):
 
     def test_sql_from(self):
         sql = SqlFrom('html').where(id=3).update(htmlmd5='abcdefg')
-        self.assertEqual(SqlFrom('html').where(id=3).update(htmlmd5='abcdefg'),
+        self.assertEqual(SqlFrom('html').where(id=3).update(htmlmd5='abcdefg').to_sql(),
                          'update `html` set `htmlmd5` = "abcdefg" where `id` = 3')
-        self.assertEqual(SqlFrom('html').insert(htmlmd5='abcdefg'),
+        self.assertEqual(SqlFrom('html').insert(htmlmd5='abcdefg').to_sql(),
                          'insert into `html` (`htmlmd5`) values ("abcdefg")')
-        self.assertEqual(SqlFrom('html').where(id=3).delete(),
+        self.assertEqual(SqlFrom('html').where(id=3).delete().to_sql(),
                          'delete from `html` where `id` = 3')
-        self.assertEqual(SqlFrom('html').where(id=3).order(id='desc').top(1).skip(2).select('id', 'name'),
+        self.assertEqual(SqlFrom('html').where(id=3).order(id='desc').top(1).skip(2).select('id', 'name').to_sql(),
                          'select id,name from `html` where `id` = 3 order by `id` desc limit 1,2')
         sqlfrom = SqlFrom('html').where(id=3).or_where(name='dgf').order(id='desc').limit(0, 122)
         sql = sqlfrom.select()
-        self.assertEqual(sql,
+        self.assertEqual(sql.to_sql(),
                          'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
         sql.clear()
-        self.assertEqual(sql, '')
+        self.assertEqual(sql.to_sql(), '')
         self.assertFalse(sql)
         sql = sqlfrom.select()
-        self.assertEqual(sql,
+        self.assertEqual(sql.to_sql(),
                          'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
         sqlfrom.clear()
-        self.assertEqual(sql, 'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
+        self.assertEqual(sql.to_sql(), 'select * from `html` where `id` = 3 or `name` = "dgf" order by `id` desc')
         self.assertTrue(sql)
+
 
 if __name__ == '__main__':
     unittest.main()

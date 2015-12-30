@@ -760,7 +760,7 @@ class SqlSelect(SqlMethod):
                    (self.__method__, SqlKey(self.__table__))
 
 
-class SqlNode(dict):
+class SqlQuery(dict):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
@@ -769,16 +769,13 @@ class SqlNode(dict):
             return True
         return False
 
-    def __eq__(self, other):
-        return str(self) == str(other)
-
     def __setattr__(self, key, value):
         self[key] = value
 
     def __getattr__(self, item):
         return self[item]
 
-    def __str__(self):
+    def to_sql(self):
         if not self:
             return ''
         #
@@ -810,7 +807,7 @@ class SqlFrom(object):
     def __init__(self, table: str):
         if not table:
             raise ValueError('empty table name')
-        self.__sql__ = SqlNode(table=table)
+        self.__sql__ = SqlQuery(table=table)
 
     def where(self, *where, **kwargs):
         self.__sql__.where = SqlWhere(*where, **kwargs)
@@ -860,19 +857,19 @@ class SqlFrom(object):
 
     def insert(self, **kwargs):
         self.__sql__.method = SqlInsert(self.__sql__.table, **kwargs)
-        return SqlNode(**self.__sql__)
+        return SqlQuery(**self.__sql__)
 
     def delete(self):
         self.__sql__.method = SqlDelete(self.__sql__.table)
-        return SqlNode(**self.__sql__)
+        return SqlQuery(**self.__sql__)
 
     def update(self, **kwargs):
         self.__sql__.method = SqlUpdate(self.__sql__.table, **kwargs)
-        return SqlNode(**self.__sql__)
+        return SqlQuery(**self.__sql__)
 
     def select(self, *select):
         self.__sql__.method = SqlSelect(self.__sql__.table, *select)
-        return SqlNode(**self.__sql__)
+        return SqlQuery(**self.__sql__)
 
     def clear(self):
         self.__sql__.clear()

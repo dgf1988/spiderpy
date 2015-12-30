@@ -56,7 +56,7 @@ class DbModelMetaclass(type):
         if name == 'DbModel':
             return type.__new__(mcs, name, bases, attrs)
 
-        table_name = attrs.get('__table__', None) or name
+        table_name = attrs.get('__table__') or name
         mappings = dict()
         fields = []
         auto_fields = []

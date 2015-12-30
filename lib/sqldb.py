@@ -65,20 +65,20 @@ class SqlDB(object):
         return self
 
     def select(self, *select):
-        sql = self.__sql.select(*select).to_str()
+        sql = self.__sql.select(*select).to_sql()
         self.__sql.clear()
         if self.execute(sql):
             return self.fetchall()
 
     def insert(self):
-        sql = self.__sql.insert().to_str()
+        sql = self.__sql.insert().to_sql()
         self.__sql.clear()
         if self.execute(sql):
             self.commit()
             return self.insertid()
 
     def delete(self):
-        sql = self.__sql.delete().to_str()
+        sql = self.__sql.delete().to_sql()
         self.__sql.clear()
         n = self.execute(sql)
         if n:
@@ -86,7 +86,7 @@ class SqlDB(object):
             return n
 
     def update(self):
-        sql = self.__sql.update().to_str()
+        sql = self.__sql.update().to_sql()
         self.__sql.clear()
         n = self.execute(sql)
         if n:

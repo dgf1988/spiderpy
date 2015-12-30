@@ -37,15 +37,15 @@ class TestSql(unittest.TestCase):
         )
 
     def test_sql(self):
-        sql = Sql().table('html').where(id='9').order(id='aSC').limit(9).select('b', 'a').to_str()
+        sql = Sql().table('html').where(id='9').order(id='aSC').limit(9).select('b', 'a').to_sql()
         self.assertEqual(sql, 'select b,a from `html` where `id` = "9" order by id ASC limit 9')
-        sql = Sql().table('html').set(id=4).insert().to_str()
+        sql = Sql().table('html').set(id=4).insert().to_sql()
         self.assertEqual(sql, 'insert into `html` set `id`=4')
-        sql = Sql().table('html').where(id=4, name='dgf').delete().to_str()
+        sql = Sql().table('html').where(id=4, name='dgf').delete().to_sql()
         self.assertIn(sql,
                       ('delete from `html` where `id` = 4 AND `name` = "dgf"',
                        'delete from `html` where `name` = "dgf" AND `id` = 4'))
-        sql = Sql().table('html').set(id=5).where(id=4, name='dgf').update().to_str()
+        sql = Sql().table('html').set(id=5).where(id=4, name='dgf').update().to_sql()
         self.assertIn(sql,
                       ('update `html` set `id`=5 where `id` = 4 AND `name` = "dgf"',
                        'update `html` set `id`=5 where `name` = "dgf" AND `id` = 4'))
