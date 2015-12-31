@@ -3,42 +3,97 @@ import enum
 from functools import reduce
 
 
-class SqlKey(object):
-    def __init__(self, key: str):
-        if not key:
-            raise ValueError('empty key')
-        self.__key__ = key
+class SqlObject(object):
+    """
+    Sql对象的基类。
+    """
 
-    def __str__(self):
-        return '`%s`' % self.__key__
-
-    def __eq__(self, other):
-        if not isinstance(other, SqlKey):
-            return False
-        return self.__key__ == other.__key__
+    # 基类实例永远为假
+    def is_true(self):
+        """
+        是否可以输出合法的Sql语句
+        :return:
+        """
+        return False
 
     def __bool__(self):
+        return self.is_true()
+
+    # 基类比较永远返回假
+    def is_equal(self, other):
+        """
+        SQL默认比较器。
+        :param other:
+        :return:
+        """
+        return False
+
+    def __eq__(self, other):
+        return self.is_equal(other)
+
+    # 字典为空
+    def to_dict(self):
+        """
+        输出字典
+        :return:
+        """
+        return {}
+
+    # 输出的语句为空
+    def to_sql(self):
+        """
+        输出SQL语句。
+        :return:
+        """
+        return ''
+
+
+class SqlKey(SqlObject):
+    def __init__(self, key: str):
+        if not key:
+            raise ValueError('empty key value')
+        self.__key__ = key
+
+    def is_equal(self, other):
+        if isinstance(other, SqlKey):
+            return self.__key__ == other.__key__
+        return super().is_equal(other)
+
+    def is_true(self):
         return bool(self.__key__)
 
+    def to_dict(self):
+        return dict(key=self.__key__)
 
-class SqlValue(object):
+    def to_sql(self):
+        return '`%s`' % self.__key__
+
+
+class SqlValue(SqlObject):
     def __init__(self, value):
         self.__value__ = value
 
-    def __str__(self):
-        if self.__value__ is None:
-            return 'null'
-        if isinstance(self.__value__, (int, float, SQLORDER)):
-            return '%s' % self.__value__
-        return '"%s"' % self.__value__
+    def is_equal(self, other):
+        if isinstance(other, SqlValue):
+            return self.__value__ == other.__value__
+        return super().is_equal(other)
 
-    def __eq__(self, other):
-        if not isinstance(other, SqlValue):
+    def is_true(self):
+        if self.__value__ in ('',):
             return False
-        return self.__value__ == other.__value__
+        return True
 
-    def __bool__(self):
-        return bool(self.__value__)
+    def to_dict(self):
+        return dict(value=self.__value__)
+
+    def to_sql(self):
+        if self.__value__ is None:
+            return 'NULL'
+        if isinstance(self.__value__, (int, float)):
+            return '%s' % self.__value__
+        if isinstance(self.__value__, SqlObject):
+            return self.__value__.to_sql()
+        return '"%s"' % self.__value__
 
 
 @enum.unique
@@ -48,14 +103,20 @@ class SQLORDER(enum.Enum):
     __str_asc__ = 'asc'
     __str_desc__ = 'desc'
 
-    def __str__(self):
+    def is_equal(self, other):
+        return self == other
+
+    def is_true(self):
+        return bool(self)
+
+    def to_dict(self):
+        return dict(order=self.to_sql())
+
+    def to_sql(self):
         if self == self.ASC:
             return self.__str_asc__
         if self == self.DESC:
             return self.__str_desc__
-
-    def __bool__(self):
-        return self == self.DESC
 
     @classmethod
     def from_str(cls, _str: str):
@@ -78,53 +139,45 @@ class SQLORDER(enum.Enum):
             return cls.DESC
 
 
-class SqlOrderCase(object):
-    __default_order__ = SQLORDER.ASC
+class SqlOrderCase(SqlObject):
 
-    def __init__(self, key: str, order: SQLORDER):
-        if not key:
-            raise ValueError
-        self.__key__ = key
+    def __init__(self, key: str, order: SQLORDER=SQLORDER.ASC):
+        self.__key__ = SqlKey(key)
         self.__order__ = order
 
-    def __eq__(self, other):
-        return str(self) == str(other)
-
-    def __str__(self):
-        return '%s %s' % (SqlKey(self.__key__), SqlValue(self.__order__))
-
-    def __bool__(self):
-        return bool(self.__order__)
-
-    def __add__(self, other):
+    def is_equal(self, other):
         if isinstance(other, SqlOrderCase):
-            return SqlOrder(self, other)
-        if isinstance(other, SqlOrder):
-            return SqlOrder(self) + other
-        raise TypeError
+            return self.__key__.is_equal(other.__key__) and self.__order__ == other.__order__
+        return super().is_equal(other)
 
-    def __len__(self):
-        return 1
+    def is_true(self):
+        return self.__key__.is_true() and self.__order__.is_true()
+
+    def to_dict(self):
+        return dict(key=self.__key__, order=self.__order__)
+
+    def to_sql(self):
+        return '%s %s' % (self.__key__.to_sql(), self.__order__.to_sql())
 
     @classmethod
-    def from_str(cls, _str: str):
-        return SqlOrderDefault(_str)
+    def from_str_key(cls, key: str):
+        return cls(key)
 
     @classmethod
-    def from_dict(cls, _dict: dict):
-        if 'key' in _dict and ('value' in _dict or 'order' in _dict):
-            key = _dict.get('key')
-            order = _dict.get('order') or _dict.get('value')
+    def from_dict(cls, **kwargs):
+        if 'key' in kwargs and ('value' in kwargs or 'order' in kwargs):
+            key = kwargs.get('key')
+            order = kwargs.get('order') or kwargs.get('value')
         else:
-            key, order = _dict.popitem()
+            key, order = kwargs.popitem()
         return cls(key, SQLORDER.from_object(order))
 
     @classmethod
     def from_object(cls, _obj):
         if isinstance(_obj, str):
-            return cls.from_str(_obj)
+            return cls.from_str_key(_obj)
         if isinstance(_obj, dict):
-            return cls.from_dict(_obj)
+            return cls.from_dict(**_obj)
         if isinstance(_obj, cls):
             return _obj
         raise TypeError
@@ -132,15 +185,6 @@ class SqlOrderCase(object):
     @classmethod
     def format_list(cls, *list_order) -> list:
         return [cls.from_object(each) for each in list_order]
-
-    @classmethod
-    def format_dict(cls, **kwargs) -> list:
-        return [cls(key, SQLORDER.from_object(value)) for key, value in kwargs.items()]
-
-
-class SqlOrderDefault(SqlOrderCase):
-    def __init__(self, key: str):
-        super().__init__(key, self.__default_order__)
 
 
 class SqlOrderDesc(SqlOrderCase):
@@ -156,35 +200,32 @@ class SqlOrderAsc(SqlOrderCase):
 class SqlOrderBy(object):
 
     def __init__(self, key: str):
-        if not key:
-            raise ValueError('empty key')
-        self.__key__ = key
-
-    def default(self):
-        return SqlOrderDefault(self.__key__)
+        self.__sql_key__ = SqlKey(key)
 
     def desc(self):
-        return SqlOrderDesc(key=self.__key__)
+        return SqlOrderDesc(self.__sql_key__.__key__)
 
     def asc(self):
-        return SqlOrderAsc(key=self.__key__)
+        return SqlOrderAsc(self.__sql_key__.__key__)
 
 
-class SqlOrder(list):
-    def __init__(self, *list_order_case, **kwargs):
-        super().__init__(SqlOrderCase.format_list(*list_order_case) + SqlOrderCase.format_dict(**kwargs))
+class SqlOrder(list, SqlObject):
+    def __init__(self, *list_order_case):
+        super().__init__(SqlOrderCase.format_list(*list_order_case))
 
-    def __add__(self, other):
-        if isinstance(other, SqlOrder):
-            self.extend(other)
-            return self
-        if isinstance(other, SqlOrderCase):
-            self.append(other)
-            return self
-        raise TypeError
+    def is_equal(self, other):
+        if isinstance(other, list):
+            return self == other
+        return super().is_equal(other)
 
-    def __str__(self):
-        return ','.join([str(order_case) for order_case in self])
+    def is_true(self):
+        return bool(len(self))
+
+    def to_dict(self):
+        return dict(order=self)
+
+    def to_sql(self):
+        return ','.join([order_case.to_sql() for order_case in self])
 
     def asc(self, column_name: str):
         self.append(SqlOrderAsc(column_name))
@@ -195,22 +236,29 @@ class SqlOrder(list):
         return self
 
 
-class SqlLimit(object):
-    def __init__(self, top=0, skip=0):
+class SqlLimit(SqlObject):
+    def __init__(self, top: int=0, skip: int=0):
+        if not isinstance(top, int) or not isinstance(skip, int) or top < 0 or skip < 0:
+            raise ValueError
         self.__top__ = top
-        if self.__top__ <= 0:
-            self.__top__ = 0
         self.__skip__ = skip
-        if self.__skip__ <= 0:
-            self.__skip__ = 0
 
-    def __bool__(self):
+    def is_equal(self, other):
+        if isinstance(other, SqlLimit):
+            return self.__top__ == other.__top__ and self.__skip__ == other.__skip__
+        return super().is_equal(other)
+
+    def is_true(self):
+        """
+        判断限制是否存在
+        :return:
+        """
         return self.__top__ > 0 and self.__skip__ >= 0
 
-    def __eq__(self, other):
-        return str(self) == str(other)
+    def to_dict(self):
+        return dict(top=self.__top__, skip=self.__skip__)
 
-    def __str__(self):
+    def to_sql(self):
         return '%s,%s' % (self.__top__, self.__skip__)
 
     def skip(self, _skip: int):
@@ -228,9 +276,7 @@ class SqlTop(SqlLimit):
 
 
 @enum.unique
-class SQLWHERETYPE(enum.Enum):
-    STR = 0
-    __str_str__ = ''
+class SQLWHEREOPERATION(enum.Enum):
     EQUAL = 1
     __str_equal__ = '='
     LESS = 2
@@ -242,7 +288,7 @@ class SQLWHERETYPE(enum.Enum):
     GREATER_EQUAL = 5
     __str_greater_equal__ = '>='
     NOT_EQUAL = 6
-    __str_not_equal__ = '<>'
+    __str_not_equal__ = '!='
 
     IN = 10
     __str_in__ = 'in'
@@ -258,185 +304,227 @@ class SQLWHERETYPE(enum.Enum):
     NOT_LIKE = 15
     __str_not_like__ = 'not like'
 
-    def __str__(self):
-        if self == SQLWHERETYPE.EQUAL:
-            return SQLWHERETYPE.__str_equal__
-        if self == SQLWHERETYPE.NOT_EQUAL:
-            return SQLWHERETYPE.__str_not_equal__
-        if self == SQLWHERETYPE.LESS:
-            return SQLWHERETYPE.__str_less__
-        if self == SQLWHERETYPE.LESS_EQUAL:
-            return SQLWHERETYPE.__str_less_equal__
-        if self == SQLWHERETYPE.GREATER:
-            return SQLWHERETYPE.__str_greater__
-        if self == SQLWHERETYPE.GREATER_EQUAL:
-            return SQLWHERETYPE.__str_greater_equal__
-        if self == SQLWHERETYPE.IN:
-            return SQLWHERETYPE.__str_in__
-        if self == SQLWHERETYPE.NOT_IN:
-            return SQLWHERETYPE.__str_not_in__
-        if self == SQLWHERETYPE.BETWEEN:
-            return SQLWHERETYPE.__str_between__
-        if self == SQLWHERETYPE.NOT_BETWEEN:
-            return SQLWHERETYPE.__str_not_between__
-        if self == SQLWHERETYPE.LIKE:
-            return SQLWHERETYPE.__str_like__
-        if self == SQLWHERETYPE.NOT_LIKE:
-            return SQLWHERETYPE.__str_not_like__
-        if self == SQLWHERETYPE.STR:
-            return SQLWHERETYPE.__str_str__
-
-
-class SqlWhereCase(object):
-    __default_type__ = SQLWHERETYPE.EQUAL
-
-    def __init__(self, key: str, where_type: SQLWHERETYPE, value):
-        if not key:
-            raise ValueError('empty key')
-        self.__key__ = key
-        self.__where_type__ = where_type
-        self.__value__ = value
-
-    def __and__(self, other):
-        return SqlWhereAnd(self, other)
-
-    def __or__(self, other):
-        return SqlWhereOr(self, other)
-
-    def __str__(self):
-        if self.__where_type__ in (SQLWHERETYPE.IN, SQLWHERETYPE.NOT_IN):
-            return '%s %s (%s)' % \
-               (SqlKey(self.__key__), self.__where_type__, ','.join([str(SqlValue(value)) for value in self.__value__]))
-        elif self.__where_type__ in (SQLWHERETYPE.BETWEEN, SQLWHERETYPE.NOT_BETWEEN):
-            if isinstance(self.__value__, dict):
-                return '%s %s %s and %s' % \
-                        (SqlKey(self.__key__), self.__where_type__,
-                         SqlValue(self.__value__['left']), SqlValue(self.__value__['right']))
-            if isinstance(self.__value__, (tuple, list)):
-                return '%s %s %s and %s' % \
-                        (SqlKey(self.__key__), self.__where_type__,
-                         SqlValue(self.__value__[0]), SqlValue(self.__value__[1]))
-        elif self.__where_type__ is SQLWHERETYPE.STR:
-            return str(self.__value__)
-        return '%s %s %s' % (SqlKey(self.__key__), self.__where_type__, SqlValue(self.__value__))
-
-    def __eq__(self, other):
-        return str(self) == str(other)
-
-    def __len__(self):
-        return 1
-
-    @classmethod
-    def from_str(cls, _str: str):
-        if not _str:
-            raise ValueError
-        return SqlWhereStr(_str)
-
-    @classmethod
-    def from_object(cls, _obj):
-        if isinstance(_obj, str):
-            return cls.from_str(_obj)
-        if isinstance(_obj, SqlWhereCase):
-            return _obj
-        raise TypeError
-
-    @classmethod
-    def format_list(cls, *list_where_case):
-        return [cls.from_object(obj) for obj in list_where_case]
-
-    @classmethod
-    def format_dict(cls, **kwargs):
-        return [cls(key, cls.__default_type__, value) for key, value in kwargs.items()]
-
-
-class SqlWhereStr(SqlWhereCase):
-    def __init__(self, str_where: str):
-        super().__init__('where_str', SQLWHERETYPE.STR, str_where)
-
-    def __bool__(self):
-        return bool(self.__value__)
-
-
-class SqlWhereNull(SqlWhereStr):
-    def __init__(self):
-        super().__init__('')
-
-    def __bool__(self):
-        return False
-
-    def __len__(self):
-        return 0
-
-
-class SqlWhereTrue(SqlWhereStr):
-    def __init__(self):
-        super().__init__('1')
-
-    def __bool__(self):
+    def is_true(self):
         return True
 
+    def is_equal(self, other):
+        return self == other
+
+    def to_dict(self):
+        return dict(operation=self.to_sql())
+
+    def to_sql(self):
+        if self == SQLWHEREOPERATION.EQUAL:
+            return SQLWHEREOPERATION.__str_equal__
+        if self == SQLWHEREOPERATION.NOT_EQUAL:
+            return SQLWHEREOPERATION.__str_not_equal__
+        if self == SQLWHEREOPERATION.LESS:
+            return SQLWHEREOPERATION.__str_less__
+        if self == SQLWHEREOPERATION.LESS_EQUAL:
+            return SQLWHEREOPERATION.__str_less_equal__
+        if self == SQLWHEREOPERATION.GREATER:
+            return SQLWHEREOPERATION.__str_greater__
+        if self == SQLWHEREOPERATION.GREATER_EQUAL:
+            return SQLWHEREOPERATION.__str_greater_equal__
+        if self == SQLWHEREOPERATION.IN:
+            return SQLWHEREOPERATION.__str_in__
+        if self == SQLWHEREOPERATION.NOT_IN:
+            return SQLWHEREOPERATION.__str_not_in__
+        if self == SQLWHEREOPERATION.BETWEEN:
+            return SQLWHEREOPERATION.__str_between__
+        if self == SQLWHEREOPERATION.NOT_BETWEEN:
+            return SQLWHEREOPERATION.__str_not_between__
+        if self == SQLWHEREOPERATION.LIKE:
+            return SQLWHEREOPERATION.__str_like__
+        if self == SQLWHEREOPERATION.NOT_LIKE:
+            return SQLWHEREOPERATION.__str_not_like__
+
+    @classmethod
+    def from_str(cls, op: str):
+        op = op.strip().lower()
+        if op == cls.__str_equal__:
+            return cls.EQUAL
+        if op == cls.__str_not_equal__:
+            return cls.NOT_EQUAL
+        if op == cls.__str_less__:
+            return cls.LESS
+        if op == cls.__str_less_equal__:
+            return cls.LESS_EQUAL
+        if op == cls.__str_greater__:
+            return cls.GREATER
+        if op == cls.__str_greater_equal__:
+            return cls.GREATER_EQUAL
+        if op == cls.__str_in__:
+            return cls.IN
+        if op == cls.__str_not_in__:
+            return cls.NOT_IN
+        if op == cls.__str_between__:
+            return cls.BETWEEN
+        if op == cls.__str_not_between__:
+            return cls.NOT_BETWEEN
+        if op == cls.__str_like__:
+            return cls.LIKE
+        if op == cls.__str_not_like__:
+            return cls.NOT_LIKE
+
+
+class SqlWhereObject(SqlObject):
+
+    def length(self):
+        return 0
+
     def __len__(self):
-        return 1
+        return self.length()
+
+    def and_(self, other):
+        if isinstance(other, SqlWhereObject):
+            return SqlWhereAnd(self, other)
+        raise TypeError
+
+    def __and__(self, other):
+        return self.and_(other)
+
+    def or_(self, other):
+        if isinstance(other, SqlWhereObject):
+            return SqlWhereOr(self, other)
+        raise TypeError
+
+    def __or__(self, other):
+        return self.or_(other)
+
+    def is_true(self):
+        return False
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereObject):
+            return self.to_sql() == other.to_sql()
+        return super().is_equal(other)
 
 
-class SqlWhereEqual(SqlWhereCase):
+class SqlWhereNull(SqlWhereObject):
+    pass
+
+
+class SqlWhereStr(SqlWhereObject):
+    def __init__(self, str_where: str):
+        if not str_where:
+            raise ValueError('str_where is empty')
+        self.__where_str__ = str_where
+
+    def length(self):
+        return int(self.is_true())
+
+    def is_true(self):
+        return bool(self.__where_str__)
+
+    def to_dict(self):
+        return dict(sql=self.__where_str__)
+
+    def to_sql(self):
+        return self.__where_str__
+
+
+class SqlWhereOperation(SqlWhereObject):
+
+    def __init__(self, key: str, operation: SQLWHEREOPERATION=SQLWHEREOPERATION.EQUAL, value=None):
+        self.__key__ = SqlKey(key)
+        self.__operation__ = operation
+        self.__value__ = value
+
+    @property
+    def key(self):
+        return self.__key__
+
+    @key.setter
+    def key(self, key: str):
+        self.__key__ = SqlKey(key)
+
+    def length(self):
+        return int(self.is_true())
+
+    def is_true(self):
+        return self.__key__.is_true() and self.__operation__.is_true()
+
+    def to_dict(self):
+        return dict(key=self.__key__, operation=self.__operation__, value=self.__value__)
+
+    def to_sql(self):
+        return '%s %s %s' % (self.__key__.to_sql(),
+                             self.__operation__.to_sql(),
+                             SqlValue(self.__value__).to_sql())
+
+
+class SqlWhereEqual(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.EQUAL, value)
+        super().__init__(key, SQLWHEREOPERATION.EQUAL, value)
 
 
-class SqlWhereNotEqual(SqlWhereCase):
+class SqlWhereNotEqual(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.NOT_EQUAL, value)
+        super().__init__(key, SQLWHEREOPERATION.NOT_EQUAL, value)
 
 
-class SqlWhereLess(SqlWhereCase):
+class SqlWhereLess(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.LESS, value)
+        super().__init__(key, SQLWHEREOPERATION.LESS, value)
 
 
-class SqlWhereLessEqual(SqlWhereCase):
+class SqlWhereLessEqual(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.LESS_EQUAL, value)
+        super().__init__(key, SQLWHEREOPERATION.LESS_EQUAL, value)
 
 
-class SqlWhereGreater(SqlWhereCase):
+class SqlWhereGreater(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.GREATER, value)
+        super().__init__(key, SQLWHEREOPERATION.GREATER, value)
 
 
-class SqlWhereGreaterEqual(SqlWhereCase):
+class SqlWhereGreaterEqual(SqlWhereOperation):
     def __init__(self, key: str, value):
-        super().__init__(key, SQLWHERETYPE.GREATER_EQUAL, value)
+        super().__init__(key, SQLWHEREOPERATION.GREATER_EQUAL, value)
 
 
-class SqlWhereIn(SqlWhereCase):
+class SqlWhereIn(SqlWhereOperation):
     def __init__(self, key: str, *list_value):
-        super().__init__(key, SQLWHERETYPE.IN, list_value)
+        super().__init__(key, SQLWHEREOPERATION.IN, list_value)
+
+    def to_sql(self):
+        return '%s %s (%s)' % (self.__key__.to_sql(),
+                               self.__operation__.to_sql(),
+                               ','.join([SqlValue(value).to_sql() for value in self.__value__]))
 
 
-class SqlWhereNotIn(SqlWhereCase):
+class SqlWhereNotIn(SqlWhereIn):
     def __init__(self, key: str, *list_value):
-        super().__init__(key, SQLWHERETYPE.NOT_IN, list_value)
+        super().__init__(key, *list_value)
+        self.__operation__ = SQLWHEREOPERATION.NOT_IN
 
 
-class SqlWhereBetween(SqlWhereCase):
+class SqlWhereBetween(SqlWhereOperation):
     def __init__(self, key: str, left_value, right_value):
-        super().__init__(key, SQLWHERETYPE.BETWEEN, dict(left=left_value, right=right_value))
+        super().__init__(key, SQLWHEREOPERATION.BETWEEN, dict(left=left_value, right=right_value))
+
+    def to_sql(self):
+        return '%s %s %s and %s' % (self.__key__.to_sql(),
+                                    self.__operation__.to_sql(),
+                                    SqlValue(self.__value__.get('left')).to_sql(),
+                                    SqlValue(self.__value__.get('right')).to_sql())
 
 
-class SqlWhereNotBetween(SqlWhereCase):
+class SqlWhereNotBetween(SqlWhereBetween):
     def __init__(self, key: str, left_value, right_value):
-        super().__init__(key, SQLWHERETYPE.NOT_BETWEEN, dict(left=left_value, right=right_value))
+        super().__init__(key, left_value, right_value)
+        self.__operation__ = SQLWHEREOPERATION.NOT_BETWEEN
 
 
-class SqlWhereLike(SqlWhereCase):
+class SqlWhereLike(SqlWhereOperation):
     def __init__(self, key: str, like_exp: str):
-        super().__init__(key, SQLWHERETYPE.LIKE, like_exp)
+        super().__init__(key, SQLWHEREOPERATION.LIKE, like_exp)
 
 
-class SqlWhereNotLike(SqlWhereCase):
+class SqlWhereNotLike(SqlWhereOperation):
     def __init__(self, key: str, like_exp: str):
-        super().__init__(key, SQLWHERETYPE.NOT_LIKE, like_exp)
+        super().__init__(key, SQLWHEREOPERATION.NOT_LIKE, like_exp)
 
 
 class SqlWhereBy(object):
@@ -502,130 +590,141 @@ class SqlWhereBy(object):
         return SqlWhereStr(str_where)
 
 
-class SqlWhere(object):
-    def __init__(self, *where_case, **kwargs):
-        if where_case or kwargs:
-            self.__where_note__ = reduce(SqlWhereAnd, self.format_list(*where_case) + SqlWhereCase.format_dict(**kwargs))
-        else:
-            self.__where_note__ = SqlWhereNull()
-
-    def __bool__(self):
-        return bool(self.__where_note__)
-
-    def __len__(self):
-        if self.__where_note__ is None:
-            return 0
-        return len(self.__where_note__)
-
-    def __str__(self):
-        if not self:
-            return ''
-        if len(self) == 1:
-            return str(self.__where_note__)
-        return '(' + str(self.__where_note__) + ')'
-
-    def __eq__(self, other):
-        return str(self) == str(other)
-
-    def __and__(self, other):
-        return SqlWhereAnd(self, other)
-
-    def __or__(self, other):
-        return SqlWhereOr(self, other)
-
-    @classmethod
-    def from_object(cls, _obj):
-        if isinstance(_obj, (SqlWhereNode, SqlWhereCase, SqlWhere)):
-            return _obj
-        else:
-            return SqlWhereCase.from_object(_obj)
-
-    @classmethod
-    def format_list(cls, *list_where):
-        return [cls.from_object(each) for each in list_where]
-
-
 @enum.unique
-class SQLWHERENODETYPE(enum.Enum):
+class SQLWHERENODE(enum.Enum):
     AND = 1
     OR = 2
 
     __str_and__ = 'and'
     __str_or__ = 'or'
 
-    def __str__(self):
-        if self == SQLWHERENODETYPE.AND:
-            return SQLWHERENODETYPE.__str_and__
-        if self == SQLWHERENODETYPE.OR:
-            return SQLWHERENODETYPE.__str_or__
+    def is_true(self):
+        return bool(self)
 
-    def __bool__(self):
-        return self != SQLWHERENODETYPE.NULL
+    def is_equal(self, other):
+        return self == other
+
+    def to_dict(self):
+        return dict(node=self.to_sql())
+
+    def to_sql(self):
+        if self == SQLWHERENODE.AND:
+            return SQLWHERENODE.__str_and__
+        if self == SQLWHERENODE.OR:
+            return SQLWHERENODE.__str_or__
 
     @classmethod
     def from_str(cls, _str: str):
         _str = _str.strip().lower()
-        if _str == SQLWHERENODETYPE.__str_and__:
-            return SQLWHERENODETYPE.AND
-        if _str == SQLWHERENODETYPE.__str_or__:
-            return SQLWHERENODETYPE.OR
+        if _str == SQLWHERENODE.__str_and__:
+            return SQLWHERENODE.AND
+        if _str == SQLWHERENODE.__str_or__:
+            return SQLWHERENODE.OR
         raise ValueError
 
 
-class SqlWhereNode(object):
-    __default_type__ = SQLWHERENODETYPE.AND
+class SqlWhereNode(SqlWhereObject):
 
-    def __init__(self, left_where, note_type: SQLWHERENODETYPE, right_where):
-        if isinstance(left_where, str):
-            left_where = SqlWhereStr(left_where)
-        if isinstance(right_where, str):
-            right_where = SqlWhereStr(right_where)
-        if not isinstance(left_where, (SqlWhereCase, SqlWhereNode, SqlWhere)):
-            raise TypeError
-        if not isinstance(right_where, (SqlWhereCase, SqlWhereNode, SqlWhere)):
-            raise TypeError
+    def __init__(self, note: SQLWHERENODE=SQLWHERENODE.AND,
+                 left_where: SqlWhereObject=SqlWhereNull(),
+                 right_where: SqlWhereObject=SqlWhereNull()):
+        self.__note__ = note
         self.__left__ = left_where
-        self.__note_type__ = note_type
         self.__right__ = right_where
 
-    def __bool__(self):
-        return bool(self.__left__) or bool(self.__right__)
+    def length(self):
+        return self.__left__.length() + self.__right__.length()
 
-    def __len__(self):
-        length = 0
-        if self.__left__:
-            length += len(self.__left__)
-        if self.__right__:
-            length += len(self.__right__)
-        return length
+    def is_true(self):
+        return self.__left__.is_true() or self.__right__.is_true()
 
-    def __and__(self, other):
-        return SqlWhereAnd(self, other)
+    def to_dict(self):
+        return dict(note=self.__note__, left=self.__left__, right=self.__right__)
 
-    def __or__(self, other):
-        return SqlWhereOr(self, other)
-
-    def __str__(self):
-        if not self:
-            return ''
-        if self.__left__ and not self.__right__:
-            return str(self.__left__)
-        if not self.__left__ and self.__right__:
-            return str(self.__right__)
-        return '%s %s %s' % (self.__left__, self.__note_type__, self.__right__)
-
-    def __eq__(self, other):
-        return str(self) == str(other)
+    def to_sql(self):
+        if self.__left__.is_true() and not self.__right__.is_true():
+            return self.__left__.to_sql()
+        if not self.__left__.is_true() and self.__right__.is_true():
+            return self.__right__.to_sql()
+        return '%s %s %s' % (self.__left__.to_sql(),
+                             self.__note__.to_sql(),
+                             self.__right__.to_sql())
 
 
 class SqlWhereAnd(SqlWhereNode):
     def __init__(self, left_where, right_where):
-        super().__init__(left_where, SQLWHERENODETYPE.AND, right_where)
+        super().__init__(SQLWHERENODE.AND, left_where, right_where)
 
 
 class SqlWhereOr(SqlWhereNode):
     def __init__(self, left_where, right_where):
-        super().__init__(left_where, SQLWHERENODETYPE.OR, right_where)
+        super().__init__(SQLWHERENODE.OR, left_where, right_where)
+
+
+class SqlWhere(SqlWhereObject):
+    def __init__(self, *list_where, **kwargs):
+        if list_where or kwargs:
+            self.__where__ = reduce(SqlWhereAnd, self.format_list(*list_where) + self.format_dict(**kwargs))
+        else:
+            self.__where__ = SqlWhereNull()
+
+    def length(self):
+        return self.__where__.length()
+
+    def is_true(self):
+        if isinstance(self.__where__, SqlWhereObject):
+            return self.__where__.is_true()
+        return super().is_true()
+
+    def to_dict(self):
+        return dict(where=self.__where__)
+
+    def to_sql(self):
+        if self.length() <= 1:
+            return self.__where__.to_sql()
+        else:
+            return '(' + self.__where__.to_sql() + ')'
+
+    @classmethod
+    def from_str(cls, _str: str):
+        if not _str:
+            return SqlWhereNull()
+        return SqlWhereStr(_str)
+
+    @classmethod
+    def from_dict(cls, **kwargs):
+        operation = SQLWHEREOPERATION.EQUAL
+        if not kwargs:
+            return SqlWhereNull()
+        if kwargs.__len__() == 1:
+            key, value = kwargs.popitem()
+        else:
+            key = kwargs.get('key')
+            value = kwargs.get('value')
+            operation = kwargs.get('operation', SQLWHEREOPERATION.EQUAL)
+            if isinstance(operation, str):
+                operation = SQLWHEREOPERATION.from_str(operation)
+            elif not isinstance(operation, SQLWHEREOPERATION):
+                raise TypeError
+        return SqlWhereOperation(key, operation, value)
+
+    @classmethod
+    def from_object(cls, obj):
+        if isinstance(obj, str):
+            return cls.from_str(obj)
+        if isinstance(obj, dict):
+            return cls.from_dict(**obj)
+        if isinstance(obj, SqlWhereObject):
+            return obj
+        raise TypeError
+
+    @classmethod
+    def format_list(cls, *list_where) ->list:
+        return [cls.from_object(obj) for obj in list_where]
+
+    @classmethod
+    def format_dict(cls, **kwargs):
+        return [SqlWhereEqual(key, value) for key, value in kwargs.items()]
 
 
 class SqlSet(dict):
@@ -814,17 +913,17 @@ class SqlFrom(object):
         return self
 
     def and_where(self, *where, **kwargs):
-        if 'where' in self.__sql__ and isinstance(self.__sql__.where, (SqlWhere, SqlWhereCase, SqlWhereNode)):
+        if 'where' in self.__sql__ and isinstance(self.__sql__.where, (SqlWhere, SqlWhereOperation, SqlWhereNode)):
             self.__sql__.where &= SqlWhere(*where, **kwargs)
         return self
 
     def or_where(self, *where, **kwargs):
-        if 'where' in self.__sql__ and isinstance(self.__sql__.where, (SqlWhere, SqlWhereCase, SqlWhereNode)):
+        if 'where' in self.__sql__ and isinstance(self.__sql__.where, (SqlWhere, SqlWhereOperation, SqlWhereNode)):
             self.__sql__.where |= SqlWhere(*where, **kwargs)
         return self
 
-    def order(self, *order, **kwargs):
-        self.__sql__.order = SqlOrder(*order, **kwargs)
+    def order(self, *order):
+        self.__sql__.order = SqlOrder(*order)
         return self
 
     def asc(self, column_name: str):
