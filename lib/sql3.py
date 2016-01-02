@@ -36,6 +36,8 @@ class SqlNode(object):
         """
         if isinstance(other, SqlNode):
             return self.to_sql() == other.to_sql()
+        if isinstance(other, str):
+            return self.to_sql() == other
         return False
 
     def __eq__(self, other):
@@ -526,6 +528,13 @@ class SqlWhere(SqlNode):
     def type(self):
         return self.__type__
 
+    def is_equal(self, other):
+        if isinstance(other, SqlWhere):
+            return self.to_sql() == other.to_sql()
+        if isinstance(other, str):
+            return self.to_sql() == other
+        return False
+
     def to_dict(self):
         return dict(type=self.type, left=self.left, right=self.right)
 
@@ -563,10 +572,8 @@ class SqlWhereStr(SqlWhere):
         return self.left.is_true()
 
     def is_equal(self, other):
-        if isinstance(other, str):
-            return self.left.to_sql() == other
         if isinstance(other, SqlWhereStr):
-            return self.left.is_equal(other.left)
+            return self.left.str == other.left.str
         return super().is_equal(other)
 
     def to_dict(self):
@@ -577,7 +584,7 @@ class SqlWhereStr(SqlWhere):
 
 
 class SqlWhereSub(SqlWhere):
-    def __init__(self, where_node: SqlWhere):
+    def __init__(self, where_node: SqlWhere=SqlWhere()):
         super().__init__(type=SQLWHERE.SUB, left_child=where_node)
 
     def is_true(self):
@@ -600,7 +607,7 @@ class SqlWhereNode(SqlWhere):
         super().__init__(type=type, left_child=left, right_child=right)
 
     def is_true(self):
-        return self.left.is_true() or self.right.is_true()
+        return (self.left.is_true() or self.right.is_true()) and self.type.is_true()
 
     def is_equal(self, other):
         if isinstance(other, SqlWhereNode):
@@ -610,6 +617,8 @@ class SqlWhereNode(SqlWhere):
         return super().is_equal(other)
 
     def to_sql(self):
+        if not self.is_true():
+            return ''
         if self.left.is_true() and not self.right.is_true():
             return self.left.to_sql()
         if not self.left.is_true() and self.right.is_true():

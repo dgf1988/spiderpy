@@ -4,7 +4,7 @@ from lib.sql3 import *
 
 class MyTestCase(unittest.TestCase):
     def test_to_str(self):
-        print(hash(None), hash(SqlNode()), hash(object()), hash(''), hash(0), hash(True))
+        print(hash(None), hash(SqlNode()), hash(object()), hash(object()), hash(''), hash(0), hash(True))
         self.assertEqual(type(SqlOrder()), SqlOrder)
         print(SqlWhereLessEqual('a', 1).to_sql())
 
@@ -144,6 +144,141 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(b, SqlLimit(1))
         self.assertEqual(b.to_dict(), dict(top=1, skip=0))
         self.assertEqual(b.to_sql(), '1,0')
+
+
+class TestWhere(unittest.TestCase):
+    def test_where(self):
+        w = SqlWhere()
+
+        self.assertFalse(w)
+        self.assertEqual(w, SqlWhere())
+        self.assertEqual(w, '')
+        self.assertNotEqual(w, SqlNode())
+        self.assertNotEqual(w, ' ')
+        self.assertEqual(w.to_dict(), SqlWhere().to_dict())
+        self.assertEqual(w.to_dict(), dict(type=SQLWHERE.NULL, left=SqlNode(), right=SqlNode()))
+        self.assertEqual(w.to_sql(), '')
+
+    def test_where_null(self):
+        null = SqlWhereNull()
+
+        self.assertFalse(null)
+
+        self.assertEqual(null, SqlWhereNull())
+        self.assertEqual(null, SqlWhere())
+        self.assertNotEqual(null, SqlNode())
+
+        self.assertEqual(null.to_dict(), dict(type=SQLWHERE.NULL, child=None))
+
+        self.assertEqual(null.to_sql(), '')
+
+    def test_where_true(self):
+        true = SqlWhereTrue()
+
+        self.assertTrue(true)
+
+        self.assertEqual(true, SqlWhereTrue())
+        self.assertNotEqual(true, SqlWhere())
+
+        self.assertEqual(true.to_dict(), dict(type=SQLWHERE.TRUE, child=1))
+
+        self.assertEqual(true.to_sql(), '1')
+
+    def test_where_str(self):
+        wstr_1 = SqlWhereStr('')
+        self.assertFalse(wstr_1)
+        self.assertEqual(wstr_1, SqlWhereStr(''))
+        self.assertEqual(wstr_1.to_dict(), dict(type=SQLWHERE.STR, child=wstr_1.left))
+        self.assertEqual(wstr_1.to_sql(), '')
+
+        wstr_2 = SqlWhereStr('a=1')
+        self.assertTrue(wstr_2)
+        self.assertEqual(wstr_2, SqlWhereStr('a=1'))
+        self.assertEqual(wstr_2.to_dict(), dict(type=SQLWHERE.STR, child=SqlNodeStr('a=1')))
+        self.assertEqual(wstr_2.to_sql(), 'a=1')
+
+        self.assertNotEqual(wstr_1, wstr_2)
+        self.assertEqual(wstr_1, SqlWhere())
+        self.assertNotEqual(wstr_2, SqlWhere())
+
+    def test_where_sub(self):
+        sub_1 = SqlWhereSub()
+        self.assertFalse(sub_1)
+        self.assertEqual(sub_1, SqlWhereSub())
+        self.assertEqual(sub_1.to_dict(), dict(type=SQLWHERE.SUB, child=SqlWhere()))
+        self.assertEqual(sub_1.to_sql(), '()')
+
+        sub_2 = SqlWhereSub(SqlWhereTrue())
+        self.assertTrue(sub_2)
+        self.assertEqual(sub_2, SqlWhereSub(SqlWhereTrue()))
+        self.assertEqual(sub_2.to_dict(), dict(type=SQLWHERE.SUB, child=SqlWhereTrue()))
+        self.assertEqual(sub_2.to_sql(), '(1)')
+
+        self.assertNotEqual(sub_1, sub_2)
+        self.assertEqual(sub_1, '()')
+        self.assertEqual(sub_2, '(1)')
+
+    def test_where_node(self):
+        node_1 = SqlWhereNode()
+        self.assertFalse(node_1)
+        self.assertEqual(node_1, '')
+        self.assertEqual(node_1, SqlWhereNull())
+        self.assertEqual(node_1, SqlWhere())
+        self.assertEqual(node_1.to_dict(), dict(type=SQLWHERE.AND, left=SqlNode(), right=SqlNode()))
+        self.assertEqual(node_1.to_sql(), '')
+
+        node_2 = SqlWhereNode(left=SqlWhereTrue())
+        self.assertTrue(node_2)
+        self.assertEqual(node_2, '1')
+        self.assertEqual(node_2, SqlWhereNode(left=SqlWhereTrue()))
+        self.assertNotEqual(node_2, SqlWhere())
+        self.assertEqual(node_2.to_dict(), dict(type=SQLWHERE.AND, left=SqlWhereTrue(), right=SqlNode()))
+        self.assertEqual(node_2.to_sql(), '1')
+        node_2.__type__ = SQLWHERE.NULL
+        self.assertFalse(node_2)
+
+        node_3 = SqlWhereNode(left=SqlWhereNull())
+        self.assertFalse(node_3)
+
+        self.assertEqual(node_1, node_3)
+        self.assertNotEqual(node_1, node_2)
+
+    def test_where_and(self):
+        a_1 = SqlWhereAnd()
+        self.assertFalse(a_1)
+        self.assertEqual(a_1, '')
+        self.assertEqual(a_1, SqlWhereNode())
+        self.assertEqual(a_1, SqlWhere())
+        self.assertNotEqual(a_1, SqlNode())
+        self.assertEqual(a_1.to_dict(), dict(type=SQLWHERE.AND, left=SqlNode(), right=SqlNode()))
+        self.assertEqual(a_1.to_sql(), '')
+
+        a_2 = SqlWhereAnd(SqlWhereNull(), SqlWhereTrue())
+        self.assertTrue(a_2)
+        self.assertEqual(a_2, '1')
+        self.assertEqual(a_2.to_dict(), dict(type=a_2.type, left=a_2.left, right=a_2.right))
+        self.assertEqual(a_2.to_sql(), '1')
+
+        a_3 = SqlWhereAnd(SqlWhereStr('a=1'), SqlWhereTrue())
+        self.assertTrue(a_3)
+        self.assertEqual(a_3, 'a=1 and 1')
+        self.assertEqual(a_3, SqlWhereNode(SQLWHERE.AND, SqlWhereStr('a=1'), SqlWhereTrue()))
+        self.assertEqual(a_3.to_dict(), dict(type=a_3.type, left=a_3.left, right=a_3.right))
+        self.assertEqual(a_3.to_sql(), 'a=1 and 1')
+
+        self.assertNotEqual(a_1, a_2)
+        self.assertNotEqual(a_2, a_3)
+        self.assertNotEqual(a_1, a_3)
+
+    def test_where_or(self):
+        a = SqlWhereOr(SqlWhereNull(), SqlWhereTrue())
+        self.assertTrue(a)
+        self.assertEqual(a, '1')
+        self.assertEqual(a, SqlWhereNode(SQLWHERE.OR, SqlWhereNull(), SqlWhereTrue()))
+        self.assertEqual(a.to_dict(), dict(type=SQLWHERE.OR, left=SqlWhereNull(), right=SqlWhereTrue()))
+        self.assertEqual(a.to_sql(), '1')
+
+
 
 if __name__ == '__main__':
     unittest.main()
