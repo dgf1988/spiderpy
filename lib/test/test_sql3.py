@@ -6,7 +6,7 @@ class MyTestCase(unittest.TestCase):
     def test_to_str(self):
         print(hash(None), hash(SqlNode()), hash(object()), hash(''), hash(0), hash(True))
         self.assertEqual(type(SqlOrder()), SqlOrder)
-        print(SqlWhereBetween('a', 1, 2).to_sql())
+        print(SqlWhereLessEqual('a', 1).to_sql())
 
     def test_node(self):
         self.assertTrue(SqlNode)

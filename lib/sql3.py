@@ -6,8 +6,13 @@ import functools
 class SqlNode(object):
     """
     一切皆节点
+    所有节点都从这开始继承
     """
     def hash(self):
+        """
+        用以支持集合和字典
+        :return:
+        """
         return super().__hash__()
 
     def __hash__(self):
@@ -186,12 +191,12 @@ class SqlValue(SqlNode):
             return str(self.value)
         if isinstance(self.value, SqlNode):
             return self.value.to_sql()
-        return '"%s"' % self.value
+        return '"%s"' % self.value.__str__()
 
 
 class SqlValueList(SqlNodeList):
     def __init__(self, *value_list):
-        super().__init__(*[SqlValue(value_list)])
+        super().__init__(*[SqlValue(value) for value in value_list])
 
     @property
     def type(self):
@@ -503,7 +508,7 @@ class SQLWHERE(enum.Enum):
             return cls.NOT_LIKE
 
 
-class SqlWhereTree(SqlNode):
+class SqlWhere(SqlNode):
     def __init__(self, type: SQLWHERE=SQLWHERE.NULL, left_child: SqlNode=SqlNode(), right_child: SqlNode=SqlNode()):
         self.__left__ = left_child
         self.__right__ = right_child
@@ -521,59 +526,113 @@ class SqlWhereTree(SqlNode):
     def type(self):
         return self.__type__
 
-    def is_true(self):
-        return self.type.is_true() and self.left.is_true()
-
     def to_dict(self):
         return dict(type=self.type, left=self.left, right=self.right)
 
 
-class SqlWhereNull(SqlWhereTree):
+class SqlWhereNull(SqlWhere):
     def __init__(self):
         super().__init__()
 
     def is_true(self):
         return False
 
+    def to_dict(self):
+        return dict(type=SQLWHERE.NULL, child=None)
 
-class SqlWhereTrue(SqlWhereTree):
+
+class SqlWhereTrue(SqlWhere):
     def __init__(self):
         super().__init__(type=SQLWHERE.TRUE)
 
     def is_true(self):
         return True
 
+    def to_dict(self):
+        return dict(type=self.type, child=1)
+
     def to_sql(self):
         return '1'
 
 
-class SqlWhereStr(SqlWhereTree):
+class SqlWhereStr(SqlWhere):
     def __init__(self, str_where: str):
         super().__init__(type=SQLWHERE.STR, left_child=SqlNodeStr(str_where))
+
+    def is_true(self):
+        return self.left.is_true()
 
     def is_equal(self, other):
         if isinstance(other, str):
             return self.left.to_sql() == other
+        if isinstance(other, SqlWhereStr):
+            return self.left.is_equal(other.left)
         return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(type=self.type, child=self.left)
 
     def to_sql(self):
         return self.left.to_sql()
 
 
-class SqlWhereNode(SqlWhereTree):
-    def __init__(self, type: SQLWHERE.AND, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+class SqlWhereSub(SqlWhere):
+    def __init__(self, where_node: SqlWhere):
+        super().__init__(type=SQLWHERE.SUB, left_child=where_node)
+
+    def is_true(self):
+        return self.left.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereSub):
+            return self.left.is_equal(other.left)
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(type=SQLWHERE.SUB, child=self.left)
+
+    def to_sql(self):
+        return '(' + self.left.to_sql() + ')'
+
+
+class SqlWhereNode(SqlWhere):
+    def __init__(self, type: SQLWHERE=SQLWHERE.AND, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
         super().__init__(type=type, left_child=left, right_child=right)
 
     def is_true(self):
-        return super().is_true() and self.right.is_true()
+        return self.left.is_true() or self.right.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereNode):
+            return self.left.is_equal(other.left) and \
+                    self.right.is_equal(other.right) and \
+                    self.type.is_equal(other.type)
+        return super().is_equal(other)
 
     def to_sql(self):
+        if self.left.is_true() and not self.right.is_true():
+            return self.left.to_sql()
+        if not self.left.is_true() and self.right.is_true():
+            return self.right.to_sql()
         return '%s %s %s' % (self.left.to_sql(), self.type.to_sql(), self.right.to_sql())
 
 
-class SqlWhereExpression(SqlWhereTree):
+class SqlWhereAnd(SqlWhereNode):
+    def __init__(self, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+        super().__init__(type=SQLWHERE.AND, left=left, right=right)
+
+
+class SqlWhereOr(SqlWhereNode):
+    def __init__(self, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+        super().__init__(type=SQLWHERE.OR, left=left, right=right)
+
+
+class SqlWhereExpression(SqlWhere):
     def __init__(self, type=SQLWHERE.EQUAL, left: SqlKey=SqlKey(), right: SqlNode=SqlValue()):
         super().__init__(type, left, right)
+
+    def is_true(self):
+        return self.left.is_true() and self.type.is_true()
 
     def is_equal(self, other):
         if isinstance(other, SqlWhereExpression):
@@ -630,7 +689,7 @@ class SqlWhereNotIn(SqlWhereIn):
 class SqlWhereBetween(SqlWhereExpression):
     def __init__(self, key: str, left_value, right_value):
         super().__init__(SQLWHERE.BETWEEN, SqlKey(key),
-                         SqlWhereTree(SQLWHERE.AND, left_child=SqlValue(left_value), right_child=SqlValue(right_value)))
+                         SqlWhereAnd(left=SqlValue(left_value), right=SqlValue(right_value)))
 
 
 class SqlWhereNotBetween(SqlWhereBetween):
