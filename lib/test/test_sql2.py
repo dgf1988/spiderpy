@@ -5,22 +5,22 @@ from lib.sqlmaster import *
 class TestSqlMaster(unittest.TestCase):
     def test_SqlObject(self):
         # 测试类
-        self.assertTrue(SqlObject)
+        self.assertTrue(SqlNode)
         # 测试实例
         # 基类实例均为假
-        self.assertFalse(SqlObject())
-        self.assertFalse(SqlObject().is_true())
+        self.assertFalse(SqlNode())
+        self.assertFalse(SqlNode().is_true())
         # 基类实例比较都为假
-        self.assertFalse(SqlObject().is_equal(SqlObject()))
-        self.assertFalse(SqlObject().is_equal(None))
-        self.assertFalse(SqlObject().is_equal(0))
-        self.assertFalse(SqlObject().is_equal(1))
-        self.assertFalse(SqlObject() == '')
-        self.assertFalse(SqlObject() == 'a')
+        self.assertFalse(SqlNode().is_equal(SqlNode()))
+        self.assertFalse(SqlNode().is_equal(None))
+        self.assertFalse(SqlNode().is_equal(0))
+        self.assertFalse(SqlNode().is_equal(1))
+        self.assertFalse(SqlNode() == '')
+        self.assertFalse(SqlNode() == 'a')
         # 基类的字典化接口，输出空字典
-        self.assertEqual(SqlObject().to_dict(), dict())
+        self.assertEqual(SqlNode().to_dict(), dict())
         # 基类的SQL输出接口，输出空语句
-        self.assertEqual(SqlObject().to_sql(), '')
+        self.assertEqual(SqlNode().to_sql(), '')
 
     def test_SqlKey(self):
         # 存在类
@@ -29,14 +29,14 @@ class TestSqlMaster(unittest.TestCase):
         # 实例测试
         key = SqlKey('a')
         self.assertTrue(key)
-        self.assertTrue(isinstance(key, SqlObject))
+        self.assertTrue(isinstance(key, SqlNode))
         self.assertEqual(key.__key__, 'a')
         key.__key__ = ''
         self.assertFalse(key)
 
         self.assertEqual(SqlKey('a'), SqlKey('a'))
         self.assertNotEqual(SqlKey('a'), SqlKey('b'))
-        self.assertNotEqual(SqlKey('a'), SqlObject())
+        self.assertNotEqual(SqlKey('a'), SqlNode())
         self.assertNotEqual(SqlKey('a'), '')
 
         self.assertEqual(SqlKey('a').to_sql(), '`a`')
@@ -65,7 +65,7 @@ class TestSqlMaster(unittest.TestCase):
         self.assertEqual(SqlValue(False).to_sql(), 'False')
         self.assertEqual(SqlValue(0).to_sql(), '0')
         self.assertEqual(SqlValue(0.0).to_sql(), '0.0')
-        self.assertEqual(SqlValue(SqlObject()).to_sql(), '')
+        self.assertEqual(SqlValue(SqlNode()).to_sql(), '')
 
     def test_SQLORDER(self):
         self.assertTrue(SQLORDER)
@@ -100,7 +100,7 @@ class TestSqlMaster(unittest.TestCase):
 
     def test_SqlOrderCase(self):
         self.assertTrue(SqlOrderCase)
-        self.assertTrue(isinstance(SqlOrderCase('a'), SqlObject))
+        self.assertTrue(isinstance(SqlOrderCase('a'), SqlNode))
         self.assertRaises(ValueError, SqlOrderCase, '')
 
         self.assertEqual(SqlOrderCase('id').__key__, SqlKey('id'))
@@ -144,7 +144,7 @@ class TestSqlMaster(unittest.TestCase):
     def test_SqlOrder(self):
         self.assertTrue(SqlOrder)
         self.assertTrue(isinstance(SqlOrder(), list))
-        self.assertTrue(isinstance(SqlOrder(), SqlObject))
+        self.assertTrue(isinstance(SqlOrder(), SqlNode))
 
         self.assertFalse(SqlOrder())
         self.assertTrue(SqlOrder('a'))
@@ -208,22 +208,22 @@ class TestSqlMaster(unittest.TestCase):
         self.assertEqual(SQLWHEREOPERATION.NOT_LIKE.to_sql(), 'not like')
 
     def test_SqlWhereObject(self):
-        self.assertTrue(SqlWhereObject)
+        self.assertTrue(SqlWhereNode)
 
-        self.assertFalse(SqlWhereObject())
-        self.assertFalse(SqlWhereObject().is_true())
+        self.assertFalse(SqlWhereNode())
+        self.assertFalse(SqlWhereNode().is_true())
 
-        self.assertEqual(SqlWhereObject().__len__(), 0)
-        self.assertEqual(SqlWhereObject().length(), 0)
+        self.assertEqual(SqlWhereNode().__len__(), 0)
+        self.assertEqual(SqlWhereNode().length(), 0)
 
-        self.assertEqual(SqlWhereObject(), SqlWhereObject())
-        self.assertEqual(SqlWhereObject(), SqlWhereNull())
-        self.assertNotEqual(SqlWhereObject(), SqlObject())
-        self.assertNotEqual(SqlWhereObject(), '')
+        self.assertEqual(SqlWhereNode(), SqlWhereNode())
+        self.assertEqual(SqlWhereNode(), SqlWhereNull())
+        self.assertNotEqual(SqlWhereNode(), SqlNode())
+        self.assertNotEqual(SqlWhereNode(), '')
 
-        self.assertEqual(SqlWhereObject().to_dict(), dict())
+        self.assertEqual(SqlWhereNode().to_dict(), dict())
 
-        self.assertEqual(SqlWhereObject().to_sql(), '')
+        self.assertEqual(SqlWhereNode().to_sql(), '')
 
     def test_SqlWhereStr(self):
         self.assertTrue(SqlWhereStr)

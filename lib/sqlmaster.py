@@ -3,7 +3,7 @@ import enum
 from functools import reduce
 
 
-class SqlObject(object):
+class SqlNode(object):
     """
     Sql对象的基类。
     """
@@ -48,7 +48,7 @@ class SqlObject(object):
         return ''
 
 
-class SqlKey(SqlObject):
+class SqlKey(SqlNode):
     def __init__(self, key: str):
         if not key:
             raise ValueError('empty key value')
@@ -69,7 +69,7 @@ class SqlKey(SqlObject):
         return '`%s`' % self.__key__
 
 
-class SqlValue(SqlObject):
+class SqlValue(SqlNode):
     def __init__(self, value):
         self.__value__ = value
 
@@ -91,7 +91,7 @@ class SqlValue(SqlObject):
             return 'NULL'
         if isinstance(self.__value__, (int, float)):
             return '%s' % self.__value__
-        if isinstance(self.__value__, SqlObject):
+        if isinstance(self.__value__, SqlNode):
             return self.__value__.to_sql()
         return '"%s"' % self.__value__
 
@@ -139,7 +139,7 @@ class SQLORDER(enum.Enum):
             return cls.DESC
 
 
-class SqlOrderCase(SqlObject):
+class SqlOrderCase(SqlNode):
 
     def __init__(self, key: str, order: SQLORDER=SQLORDER.ASC):
         self.__key__ = SqlKey(key)
@@ -209,7 +209,7 @@ class SqlOrderBy(object):
         return SqlOrderAsc(self.__sql_key__.__key__)
 
 
-class SqlOrder(list, SqlObject):
+class SqlOrder(list, SqlNode):
     def __init__(self, *list_order_case):
         super().__init__(SqlOrderCase.format_list(*list_order_case))
 
@@ -236,7 +236,7 @@ class SqlOrder(list, SqlObject):
         return self
 
 
-class SqlLimit(SqlObject):
+class SqlLimit(SqlNode):
     def __init__(self, top: int=0, skip: int=0):
         if not isinstance(top, int) or not isinstance(skip, int) or top < 0 or skip < 0:
             raise ValueError
@@ -368,7 +368,7 @@ class SQLWHEREOPERATION(enum.Enum):
             return cls.NOT_LIKE
 
 
-class SqlWhereObject(SqlObject):
+class SqlWhereNode(SqlNode):
 
     def length(self):
         return 0
@@ -377,7 +377,7 @@ class SqlWhereObject(SqlObject):
         return self.length()
 
     def and_(self, other):
-        if isinstance(other, SqlWhereObject):
+        if isinstance(other, SqlWhereNode):
             return SqlWhereAnd(self, other)
         raise TypeError
 
@@ -385,7 +385,7 @@ class SqlWhereObject(SqlObject):
         return self.and_(other)
 
     def or_(self, other):
-        if isinstance(other, SqlWhereObject):
+        if isinstance(other, SqlWhereNode):
             return SqlWhereOr(self, other)
         raise TypeError
 
@@ -396,16 +396,16 @@ class SqlWhereObject(SqlObject):
         return False
 
     def is_equal(self, other):
-        if isinstance(other, SqlWhereObject):
+        if isinstance(other, SqlWhereNode):
             return self.to_sql() == other.to_sql()
         return super().is_equal(other)
 
 
-class SqlWhereNull(SqlWhereObject):
+class SqlWhereNull(SqlWhereNode):
     pass
 
 
-class SqlWhereStr(SqlWhereObject):
+class SqlWhereStr(SqlWhereNode):
     def __init__(self, str_where: str):
         if not str_where:
             raise ValueError('str_where is empty')
@@ -424,7 +424,7 @@ class SqlWhereStr(SqlWhereObject):
         return self.__where_str__
 
 
-class SqlWhereOperation(SqlWhereObject):
+class SqlWhereOperation(SqlWhereNode):
 
     def __init__(self, key: str, operation: SQLWHEREOPERATION=SQLWHEREOPERATION.EQUAL, value=None):
         self.__key__ = SqlKey(key)
@@ -623,11 +623,11 @@ class SQLWHERENODE(enum.Enum):
         raise ValueError
 
 
-class SqlWhereNode(SqlWhereObject):
+class SqlWhereNode(SqlWhereNode):
 
     def __init__(self, note: SQLWHERENODE=SQLWHERENODE.AND,
-                 left_where: SqlWhereObject=SqlWhereNull(),
-                 right_where: SqlWhereObject=SqlWhereNull()):
+                 left_where: SqlWhereNode=SqlWhereNull(),
+                 right_where: SqlWhereNode=SqlWhereNull()):
         self.__note__ = note
         self.__left__ = left_where
         self.__right__ = right_where
@@ -661,7 +661,7 @@ class SqlWhereOr(SqlWhereNode):
         super().__init__(SQLWHERENODE.OR, left_where, right_where)
 
 
-class SqlWhere(SqlWhereObject):
+class SqlWhere(SqlWhereNode):
     def __init__(self, *list_where, **kwargs):
         if list_where or kwargs:
             self.__where__ = reduce(SqlWhereAnd, self.format_list(*list_where) + self.format_dict(**kwargs))
@@ -672,7 +672,7 @@ class SqlWhere(SqlWhereObject):
         return self.__where__.length()
 
     def is_true(self):
-        if isinstance(self.__where__, SqlWhereObject):
+        if isinstance(self.__where__, SqlWhereNode):
             return self.__where__.is_true()
         return super().is_true()
 
@@ -714,7 +714,7 @@ class SqlWhere(SqlWhereObject):
             return cls.from_str(obj)
         if isinstance(obj, dict):
             return cls.from_dict(**obj)
-        if isinstance(obj, SqlWhereObject):
+        if isinstance(obj, SqlWhereNode):
             return obj
         raise TypeError
 
