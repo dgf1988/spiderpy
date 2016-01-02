@@ -1,12 +1,13 @@
 import unittest
-from lib.sql3 import *
+from lib.sql import *
 
 
 class MyTestCase(unittest.TestCase):
     def test_to_str(self):
         print(hash(None), hash(SqlNode()), hash(object()), hash(object()), hash(''), hash(0), hash(True))
         self.assertEqual(type(SqlOrder()), SqlOrder)
-        print(SqlWhereLessEqual('a', 1).to_sql())
+        print(SqlWhereLessEqual('a', 1).or_by(SqlWhereNotIn('name', '', 'abc', 1, 0, 0.0, False, None)).bracket().to_sql())
+        print(SqlValueList('a', 'b').to_str())
 
     def test_node(self):
         self.assertTrue(SqlNode)
@@ -201,17 +202,17 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(wstr_1, SqlWhere())
         self.assertNotEqual(wstr_2, SqlWhere())
 
-    def test_where_sub(self):
-        sub_1 = SqlWhereSub()
+    def test_where_bracket(self):
+        sub_1 = SqlWhereBracket()
         self.assertFalse(sub_1)
-        self.assertEqual(sub_1, SqlWhereSub())
-        self.assertEqual(sub_1.to_dict(), dict(type=SQLWHERE.SUB, child=SqlWhere()))
+        self.assertEqual(sub_1, SqlWhereBracket())
+        self.assertEqual(sub_1.to_dict(), dict(type=SQLWHERE.BRACKET, child=SqlWhere()))
         self.assertEqual(sub_1.to_sql(), '()')
 
-        sub_2 = SqlWhereSub(SqlWhereTrue())
+        sub_2 = SqlWhereBracket(SqlWhereTrue())
         self.assertTrue(sub_2)
-        self.assertEqual(sub_2, SqlWhereSub(SqlWhereTrue()))
-        self.assertEqual(sub_2.to_dict(), dict(type=SQLWHERE.SUB, child=SqlWhereTrue()))
+        self.assertEqual(sub_2, SqlWhereBracket(SqlWhereTrue()))
+        self.assertEqual(sub_2.to_dict(), dict(type=SQLWHERE.BRACKET, child=SqlWhereTrue()))
         self.assertEqual(sub_2.to_sql(), '(1)')
 
         self.assertNotEqual(sub_1, sub_2)
@@ -278,6 +279,10 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(a.to_dict(), dict(type=SQLWHERE.OR, left=SqlWhereNull(), right=SqlWhereTrue()))
         self.assertEqual(a.to_sql(), '1')
 
+    def test_where_and_or_by(self):
+        a = SqlWhereAnd(SqlWhereEqual('a', 1), SqlWhereIn('b', 'a', 'b'))
+        self.assertEqual(a, SqlWhereEqual('a', 1).and_by(SqlWhereIn('b', 'a', 'b')))
+        b = a.or_by(SqlWhereStr('c=1'))
 
 
 if __name__ == '__main__':

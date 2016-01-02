@@ -1,526 +1,737 @@
 # coding=utf-8
-from enum import Enum, unique
+import enum
+import functools
 
 
+class SqlNode(object):
+    """
+    一切皆节点
+    所有节点都从这开始继承
+    """
+    def hash(self):
+        """
+        用以支持集合和字典
+        :return:
+        """
+        return super().__hash__()
 
-@unique
-class ORDER(Enum):
-    ASC = 0
-    DESC = 1
+    def __hash__(self):
+        return self.hash()
 
-
-class OrderBy(object):
-    def __init__(self, key: str, order: ORDER):
-        self.__key = key
-        self.__mod = order
-
-    def __str__(self):
-        if self.__mod is ORDER.ASC:
-            return '{key} ASC'.format(key=self.__key)
-        else:
-            return '{key} DESC'.format(key=self.__key)
-
-
-class Order(object):
-    def __init__(self, *orderby, **kwargs):
-        self.__order = []
-        for each in orderby:
-            if isinstance(each, str):
-                self.__order.append(OrderBy(each, ORDER.ASC))
-            elif isinstance(each, OrderBy):
-                self.__order.append(each)
-            else:
-                raise ValueError
-        for k, v in kwargs.items():
-            if isinstance(v, str):
-                v = v.lower()
-                if not v or v == 'asc':
-                    self.__order.append(OrderBy(k, ORDER.ASC))
-                elif v == 'desc':
-                    self.__order.append(OrderBy(k, ORDER.DESC))
-            else:
-                if not v or v is ORDER.ASC:
-                    self.__order.append(OrderBy(k, ORDER.ASC))
-                else:
-                    self.__order.append(OrderBy(k, ORDER.DESC))
-
-    def __str__(self):
-        return ','.join([str(each) for each in self.__order])
+    def is_true(self) -> bool:
+        """
+        是否满足输出SQL语句的条件
+        :return:
+        """
+        return False
 
     def __bool__(self):
-        return len(self.__order) > 0
+        return self.is_true()
 
-
-class Sql(object):
-    SET = 'set'
-    INTO = 'into'
-    AND = 'AND'
-    OR = 'OR'
-    FROM = 'from'
-
-    ORDERBY = 'order by'
-    LIMIT = 'limit'
-
-    INSERT = 'insert'
-    DELETE = 'delete'
-    UPDATE = 'update'
-    SELECT = 'select'
-
-    WHERE = 'where'
-    WHERE_EQUAL = '='
-    WHERE_NOTEQUAL = '<>'
-    WHERE_GREATER = '>'
-    WHERE_GREATEREQUAL = '>='
-    WHERE_LESS = '<'
-    WHERE_LESSEQUAL = '<='
-    WHERE_NOT = 'NOT'
-    WHERE_IN = 'IN'
-    WHERE_BETWEEN = 'BETWEEN'
-    WHERE_LIKE = 'LIKE'
-
-    def __init__(self):
-        self.__table = ''
-        self.__method = ''
-        self.__where = None
-        self.__order = None
-        self.__limit = dict(length=0, skip=0)
-        self.__select = []
-        self.__sets = {}
-
-    def clear(self):
-        self.__table = ''
-        self.__method = ''
-        self.__where = None
-        self.__order = None
-        self.__limit = dict(length=0, skip=0)
-        self.__select = []
-        self.__sets = {}
-
-    def table(self, name_table: str):
-        self.__table = name_table
-        return self
-
-    def set(self, **kwargs):
-        for k, v in kwargs.items():
-            self.__sets[k] = v
-        return self
-
-    def where(self, *wherecase, **kwargs):
-        if not self.__where:
-            self.__where = Where(*wherecase, **kwargs)
-        else:
-            self.__where.Or(Where(*wherecase, **kwargs))
-        return self
-
-    def order(self, *orderby, **kwargs):
-        self.__order = Order(*orderby, **kwargs)
-        return self
-
-    def limit(self, length: int, skip=0):
-        self.__limit['length'] = length
-        self.__limit['skip'] = skip
-        return self
-
-    def select(self, *select):
-        if not select:
-            select = ['*']
-        self.__method = Sql.SELECT
-        self.__select = select
-        return self
-
-    def insert(self):
-        self.__method = Sql.INSERT
-        return self
-
-    def delete(self):
-        self.__method = Sql.DELETE
-        return self
-
-    def update(self):
-        self.__method = Sql.UPDATE
-        return self
-
-    def to_str(self):
-        return str(self)
-
-    def __str__(self):
-        if self.__method is Sql.SELECT:
-            sql_items = [self.__method, ','.join(self.__select), Sql.FROM, Sql.keytostr(self.__table)]
-            if self.__where:
-                sql_items.append(Sql.WHERE)
-                sql_items.append(str(self.__where))
-            if self.__order:
-                sql_items.append(Sql.ORDERBY)
-                sql_items.append(str(self.__order))
-            sql_limit = Sql.limittostr(self.__limit)
-            if sql_limit:
-                sql_items += [Sql.LIMIT, sql_limit]
-            return ' '.join(sql_items)
-        elif self.__method is Sql.INSERT:
-            sql_items = [self.__method, Sql.INTO, Sql.keytostr(self.__table),
-                         Sql.SET, Sql.setstostr(self.__sets)]
-            return ' '.join(sql_items)
-        elif self.__method is Sql.DELETE:
-            sql_items = [self.__method, Sql.FROM, Sql.keytostr(self.__table),
-                         Sql.WHERE, str(self.__where)]
-            return ' '.join(sql_items)
-        elif self.__method is Sql.UPDATE:
-            sql_items = [self.__method, Sql.keytostr(self.__table),
-                         Sql.SET, Sql.setstostr(self.__sets),
-                         Sql.WHERE, str(self.__where)]
-            return ' '.join(sql_items)
-        else:
-            raise ValueError('no method')
-
-    @staticmethod
-    def setstostr(sets: dict):
-        str_items = []
-        for k, v in sets.items():
-            str_items.append('{key}={value}'.format(key=Sql.keytostr(k), value=Sql.valuetostr(v)))
-        return ','.join(str_items)
-
-    @staticmethod
-    def valuetostr(value):
-        if isinstance(value, (int, bool, float)):
-            return '%s' % value
-        else:
-            return '"%s"' % value
-
-    @staticmethod
-    def keytostr(name_key: str):
-        return '`%s`' % name_key
-
-    @staticmethod
-    def limittostr(limit: dict):
-        if limit['length'] and limit['skip']:
-            return '%s,%s' % (limit['skip'], limit['length'])
-        elif limit['length'] and not limit['skip']:
-            return '%s' % limit['length']
-        elif not limit['length'] and limit['skip']:
-            return '%s,-1' % limit['skip']
-        else:
-            return ''
-
-
-class SqlMethod(object):
-    def __init__(self, table_name: str):
-        self.sql = Sql().table(table_name)
-
-    def __str__(self):
-        return str(self.sql)
-
-    def to_str(self):
-        return str(self)
-
-
-class Insert(SqlMethod):
-    def __init__(self, table_name: str):
-        super().__init__(table_name)
-        self.sql.insert()
-
-    def set(self, **kwargs):
-        self.sql.set(**kwargs)
-        return self
-
-
-class Delete(SqlMethod):
-    def __init__(self, table_name: str):
-        super().__init__(table_name)
-        self.sql.delete()
-
-    def where(self, *wherecase, **kwargs):
-        self.sql.where(*wherecase, **kwargs)
-        return self
-
-
-class Update(SqlMethod):
-    def __init__(self, table_name: str):
-        super().__init__(table_name)
-        self.sql.update()
-
-    def where(self, *wherecase, **kwargs):
-        self.sql.where(*wherecase, **kwargs)
-        return self
-
-    def set(self, **kwargs):
-        self.sql.set(**kwargs)
-        return self
-
-
-class Select(SqlMethod):
-    def __init__(self, table_name: str, *list_select):
-        super().__init__(table_name)
-        self.sql.select(*list_select)
-
-    def where(self, *wherecase, **kwargs):
-        self.sql.where(*wherecase, **kwargs)
-        return self
-
-    def order(self, *orderby, **kwargs):
-        self.sql.order(*orderby, **kwargs)
-        return self
-
-    def limit(self, length: int, skip=0):
-        self.sql.limit(length, skip)
-        return self
-
-
-class WhereBy(object):
-    def __init__(self, key):
-        if not isinstance(key, str) or not key:
-            raise ValueError
-        self.__key = key
-        pass
-
-    @property
-    def key(self):
-        return self.__key
-
-    # =
-    def Equal(self, value):
-        return WhereEquel(self.key, value)
+    def is_equal(self, other) -> bool:
+        """
+        节点比较器
+        :param other:
+        :return:
+        """
+        if isinstance(other, SqlNode):
+            return self.to_sql() == other.to_sql()
+        if isinstance(other, str):
+            return self.to_sql() == other
+        return False
 
     def __eq__(self, other):
-        return self.Equal(other)
+        return self.is_equal(other)
 
-    # <>
-    def Not_equal(self, value):
-        return WhereNotEqual(self.key, value)
+    def to_dict(self) -> dict:
+        """
+        输出字典
+        :return:
+        """
+        return dict()
 
-    def __ne__(self, other):
-        return self.Not_equal(other)
+    def to_sql(self) -> str:
+        """
+        输出SQL语句
+        :return:
+        """
+        return ''
 
-    # >
-    def Greater(self, value):
-        return WhereGreater(self.key, value)
-
-    def __gt__(self, other):
-        return self.Greater(other)
-
-    # >=
-    def Greater_equal(self, value):
-        return WhereGreaterEqual(self.key, value)
-
-    def __ge__(self, other):
-        return self.Greater_equal(other)
-
-    # <
-    def Less(self, value):
-        return WhereLess(self.key, value)
-
-    def __lt__(self, other):
-        return self.Less(other)
-
-    # <=
-    def Less_equal(self, value):
-        return WhereLessEqual(self.key, value)
-
-    def __le__(self, other):
-        return self.Less_equal(other)
-
-    #
-    def Between(self, beg, end):
-        return WhereBetween(self.key, beg, end)
-
-    def Not_between(self, beg, end):
-        return WhereNotBetween(self.key, beg, end)
-
-    def Like(self, like_exp):
-        return WhereLike(self.key, like_exp)
-
-    def Not_like(self, like_exp):
-        return WhereNotLike(self.key, like_exp)
-
-    def In(self, *listvalue):
-        return WhereIn(self.key, *listvalue)
-
-    def Not_in(self, *listvalue):
-        return WhereNotIn(self.key, *listvalue)
-
-
-class Where(object):
-    def __init__(self, *wherecase, **where_keyvalue):
-        self.__list = []
-        self.__sign = []
-        if wherecase:
-            self.And(*wherecase)
-        if where_keyvalue:
-            self.And(*[WhereEquel(k, v) for k, v in where_keyvalue.items()])
-        pass
-
-    def And(self, *wherecase):
-        len_case = len(wherecase)
-        self.__list += wherecase
-        self.__sign += [Sql.AND] * len_case
-        return self
-
-    def Or(self, *wherecase):
-        len_case = len(wherecase)
-        self.__list += wherecase
-        self.__sign += [Sql.OR] * len_case
-        return self
-
-    def __bool__(self):
-        return len(self.__list) > 0
-
-    def __and__(self, other):
-        return self.And(other)
-
-    def __or__(self, other):
-        return self.Or(other)
-
-    def __str__(self):
-        len_list = len(self.__list)
-        list_item = []
-        for i in range(len_list):
-            if isinstance(self.__list[i], Where):
-                list_item.append('( ' + str(self.__list[i]) + ' )')
+    def to_str(self) -> str:
+        """
+        输出字符串
+        :return:
+        """
+        d = self.to_dict()
+        for k, v in d.items():
+            if isinstance(v, list):
+                d[k] = [each.to_sql() for each in v if isinstance(each, SqlNode)]
+            elif isinstance(v, SqlNode):
+                d[k] = v.to_sql()
             else:
-                list_item.append(str(self.__list[i]))
-            if i + 1 < len_list:
-                list_item.append(str(self.__sign[i + 1]))
-        return ' '.join(list_item)
+                d[k] = str(v)
+        return str(d)
+
+    # for debug
+    def __str__(self):
+        return self.to_str()
 
 
-class WhereCase(object):
-    def __init__(self, key, sign, *listvalue):
-        self.__key = key
-        self.__sign = sign
-        self.__listvalue = listvalue
-        pass
+class SqlNodeList(SqlNode):
+    def __init__(self, *args):
+        self.__nodes__ = list(args)
+
+    @property
+    def list(self):
+        return self.__nodes__
+
+    @property
+    def type(self):
+        return SqlNode
+
+    def is_true(self):
+        if not self.list:
+            return False
+        for each in self.list:
+            if not isinstance(each, self.type):
+                return False
+            if not each.is_true():
+                return False
+        return True
+
+    def is_equal(self, other):
+        if isinstance(other, SqlNodeList):
+            return self.list == other.list
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(list=self.list)
+
+    def to_sql(self):
+        return ','.join([each.to_sql() for each in self.list if isinstance(each, self.type)])
+
+
+class SqlNodeSet(SqlNodeList):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.__nodes__ = set(self.__nodes__)
+
+    @property
+    def set(self):
+        return self.__nodes__
+
+    def to_dict(self):
+        return dict(set=self.set)
+
+
+class SqlNodeStr(SqlNode):
+    def __init__(self, str_raw: str):
+        self.__str_raw__ = str_raw
+
+    @property
+    def str(self):
+        return self.__str_raw__
+
+    def is_true(self):
+        return bool(self.str)
+
+    def is_equal(self, other):
+        if isinstance(other, SqlNodeStr):
+            return self.str == other.str
+        if isinstance(other, str):
+            return self.str == other
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(str=self.str)
+
+    def to_sql(self):
+        return self.str
+
+
+class SqlKey(SqlNode):
+    def __init__(self, key: str=''):
+        self.__key__ = key
 
     @property
     def key(self):
-        return self.__key
+        return self.__key__
+
+    def hash(self):
+        return hash(self.key)
+
+    def is_true(self):
+        return bool(self.key)
+
+    def is_equal(self, other):
+        if isinstance(other, SqlKey):
+            return self.key == other.key
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(key=self.key)
+
+    def to_sql(self):
+        return '`%s`' % self.key
+
+
+class SqlValue(SqlNode):
+    def __init__(self, value=None):
+        self.__value__ = value
 
     @property
-    def sign(self):
-        return self.__sign
+    def value(self):
+        return self.__value__
+
+    def is_true(self):
+        return True
+
+    def is_equal(self, other):
+        if isinstance(other, SqlValue):
+            return self.value == other.value
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(value=self.value)
+
+    def to_sql(self):
+        if self.value is None:
+            return 'NULL'
+        if isinstance(self.value, (int, float)):
+            return str(self.value)
+        if isinstance(self.value, SqlNode):
+            return self.value.to_sql()
+        return '"%s"' % self.value.__str__()
+
+
+class SqlValueList(SqlNodeList):
+    def __init__(self, *value_list):
+        super().__init__(*[SqlValue(value) for value in value_list])
 
     @property
-    def listvalue(self):
-        return self.__listvalue
+    def type(self):
+        return SqlValue
 
-    @staticmethod
-    def strkey(key):
-        return '`{key}`'.format(key=key)
+    def to_sql(self):
+        return '(' + super().to_sql() + ')'
 
-    @staticmethod
-    def strvalue(value):
-        if isinstance(value, (int, bool, float)):
-            return '%s' % value
+
+class SqlKeyValue(SqlNode):
+    def __init__(self, key: str='', value=None):
+        self.__key__ = SqlKey(key)
+        self.__value__ = SqlValue(value)
+
+    @property
+    def key(self):
+        return self.__key__
+
+    @property
+    def value(self):
+        return self.__value__
+
+    def hash(self):
+        return hash(self.key.key + self.value.__str__())
+
+    def is_true(self):
+        return self.key.is_true() and self.value.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlKeyValue):
+            return self.key.is_equal(other.key) and self.value.is_equal(other.value)
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(key=self.key, value=self.value)
+
+    def to_sql(self):
+        return '%s = %s' % (self.key.to_sql(), self.value.to_sql())
+
+
+class SqlKeyValueSet(SqlNodeSet):
+    def __init__(self, **kwargs):
+        super().__init__(*[SqlKeyValue(key, value) for key, value in kwargs.items()])
+
+    @property
+    def type(self):
+        return SqlKeyValue
+
+
+class SqlTable(SqlKey):
+    @property
+    def table(self):
+        return self.key
+
+    def is_equal(self, other):
+        if isinstance(other, SqlTable):
+            return self.table == other.table
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(table=self.table)
+
+
+class SqlTableSet(SqlNodeSet):
+    def __init__(self, *keys):
+        super().__init__(*[SqlTable(key) for key in keys])
+
+    @property
+    def type(self):
+        return SqlTable
+
+
+class SqlLimit(SqlNode):
+    def __init__(self, top: int=0, skip: int=0):
+        self.__top__ = top
+        self.__skip__ = skip
+
+    @property
+    def top(self):
+        return self.__top__
+
+    @property
+    def skip(self):
+        return self.__skip__
+
+    def is_true(self):
+        return self.top > 0 or self.skip > 0
+
+    def is_equal(self, other):
+        if isinstance(other, SqlLimit):
+            return self.top == other.top and self.skip == other.skip
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(top=self.top, skip=self.skip)
+
+    def to_sql(self):
+        return '%s,%s' % (self.top, self.skip)
+
+
+@enum.unique
+class SQLORDER(enum.Enum):
+    ASC = 0
+    DESC = 1
+    __str_asc__ = 'asc'
+    __str_desc__ = 'desc'
+
+    def is_equal(self, other):
+        return self == other
+
+    def is_true(self):
+        return bool(self)
+
+    def to_dict(self):
+        return dict(order=self)
+
+    def to_sql(self):
+        if self == self.ASC:
+            return self.__str_asc__
+        if self == self.DESC:
+            return self.__str_desc__
+
+    @classmethod
+    def from_str(cls, _str: str):
+        _str = _str.strip().lower()
+        if _str == cls.__str_asc__:
+            return cls.ASC
+        if _str == cls.__str_desc__:
+            return cls.DESC
+        raise ValueError
+
+    @classmethod
+    def from_object(cls, _obj):
+        if isinstance(_obj, cls):
+            return _obj
+        if isinstance(_obj, str):
+            return cls.from_str(_obj)
+        if not _obj:
+            return cls.ASC
         else:
-            return '\"%s\"' % value
-
-    def __str__(self):
-        return '`{key}` {sign} {value}'\
-            .format(key=self.key, sign=self.sign, value=self.strvalue(self.listvalue[0]))
-
-    def __and__(self, other):
-        return Where(self).And(other)
-
-    def __or__(self, other):
-        return Where(self).Or(other)
+            return cls.DESC
 
 
-class WhereEquel(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_EQUAL, value)
+class SqlOrder(SqlNode):
+    def __init__(self, key: str='', order: SQLORDER=SQLORDER.ASC):
+        self.__key__ = SqlKey(key)
+        self.__order__ = order
+
+    @property
+    def key(self):
+        return self.__key__
+
+    @property
+    def order(self):
+        return self.__order__
+
+    def asc(self, key: str):
+        return SqlOrderList(self, SqlOrderAsc(key))
+
+    def desc(self, key: str):
+        return SqlOrderList(self, SqlOrderDesc(key))
+
+    def is_true(self):
+        return self.key.is_true() and self.order.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlOrder):
+            return self.key.is_equal(other.key) and self.order.is_equal(other.order)
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(key=self.key, order=self.order)
+
+    def to_sql(self):
+        return '%s %s' % (self.key.to_sql(), self.order.to_sql())
 
 
-class WhereLess(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_LESS, value)
+class SqlOrderAsc(SqlOrder):
+    def __init__(self, key: str):
+        super().__init__(key)
 
 
-class WhereGreater(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_GREATER, value)
+class SqlOrderDesc(SqlOrder):
+    def __init__(self, key: str):
+        super().__init__(key, SQLORDER.DESC)
 
 
-class WhereLessEqual(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_LESSEQUAL, value)
+class SqlOrderList(SqlNodeList):
+    def __init__(self, *orders):
+        super().__init__(*orders)
+
+    @property
+    def type(self):
+        return SqlOrder
+
+    def asc(self, key: str):
+        self.list.append(SqlOrderAsc(key))
+        return self
+
+    def desc(self, key: str):
+        self.list.append(SqlOrderDesc(key))
+        return self
 
 
-class WhereGreaterEqual(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_GREATEREQUAL, value)
+@enum.unique
+class SQLWHERE(enum.Enum):
+
+    EQUAL = 1
+    __str_equal__ = '='
+    LESS = 2
+    __str_less__ = '<'
+    GREATER = 3
+    __str_greater__ = '>'
+    LESS_EQUAL = 4
+    __str_less_equal__ = '<='
+    GREATER_EQUAL = 5
+    __str_greater_equal__ = '>='
+    NOT_EQUAL = 6
+    __str_not_equal__ = '!='
+
+    IN = 10
+    __str_in__ = 'in'
+    BETWEEN = 11
+    __str_between__ = 'between'
+    LIKE = 12
+    __str_like__ = 'like'
+
+    NOT_IN = 13
+    __str_not_in__ = 'not in'
+    NOT_BETWEEN = 14
+    __str_not_between__ = 'not between'
+    NOT_LIKE = 15
+    __str_not_like__ = 'not like'
+
+    AND = 21
+    __str_and__ = 'and'
+    OR = 22
+    __str_or__ = 'or'
+    BRACKET = 31
+    STR = 32
+    NULL = 41
+    TRUE = 42
+
+    def is_true(self):
+        return self != self.NULL
+
+    def is_equal(self, other):
+        return self == other
+
+    def to_dict(self):
+        return dict(where=self)
+
+    def to_sql(self):
+        if self == self.EQUAL:
+            return self.__str_equal__
+        if self == self.NOT_EQUAL:
+            return self.__str_not_equal__
+        if self == self.LESS:
+            return self.__str_less__
+        if self == self.LESS_EQUAL:
+            return self.__str_less_equal__
+        if self == self.GREATER:
+            return self.__str_greater__
+        if self == self.GREATER_EQUAL:
+            return self.__str_greater_equal__
+        if self == self.IN:
+            return self.__str_in__
+        if self == self.NOT_IN:
+            return self.__str_not_in__
+        if self == self.BETWEEN:
+            return self.__str_between__
+        if self == self.NOT_BETWEEN:
+            return self.__str_not_between__
+        if self == self.LIKE:
+            return self.__str_like__
+        if self == self.NOT_LIKE:
+            return self.__str_not_like__
+        if self == self.AND:
+            return self.__str_and__
+        if self == self.OR:
+            return self.__str_or__
+
+    @classmethod
+    def from_str(cls, op: str):
+        op = op.strip().lower()
+        if op == cls.__str_equal__:
+            return cls.EQUAL
+        if op == cls.__str_not_equal__:
+            return cls.NOT_EQUAL
+        if op == cls.__str_less__:
+            return cls.LESS
+        if op == cls.__str_less_equal__:
+            return cls.LESS_EQUAL
+        if op == cls.__str_greater__:
+            return cls.GREATER
+        if op == cls.__str_greater_equal__:
+            return cls.GREATER_EQUAL
+        if op == cls.__str_in__:
+            return cls.IN
+        if op == cls.__str_not_in__:
+            return cls.NOT_IN
+        if op == cls.__str_between__:
+            return cls.BETWEEN
+        if op == cls.__str_not_between__:
+            return cls.NOT_BETWEEN
+        if op == cls.__str_like__:
+            return cls.LIKE
+        if op == cls.__str_not_like__:
+            return cls.NOT_LIKE
 
 
-class WhereNotEqual(WhereCase):
-    def __init__(self, key, value):
-        WhereCase.__init__(self, key, Sql.WHERE_NOTEQUAL, value)
+class SqlWhere(SqlNode):
+    def __init__(self, type: SQLWHERE=SQLWHERE.NULL, left_child: SqlNode=SqlNode(), right_child: SqlNode=SqlNode()):
+        self.__left__ = left_child
+        self.__right__ = right_child
+        self.__type__ = type
+
+    @property
+    def left(self):
+        return self.__left__
+
+    @property
+    def right(self):
+        return self.__right__
+
+    @property
+    def type(self):
+        return self.__type__
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhere):
+            return self.to_sql() == other.to_sql()
+        if isinstance(other, str):
+            return self.to_sql() == other
+        return False
+
+    def to_dict(self):
+        return dict(type=self.type, left=self.left, right=self.right)
+
+    def and_by(self, other: SqlNode):
+        return SqlWhereAnd(self, other)
+
+    def or_by(self, other: SqlNode):
+        return SqlWhereOr(self, other)
+
+    def bracket(self):
+        return SqlWhereBracket(self)
 
 
-class WhereBetween(WhereCase):
-    def __init__(self, key, beg, end):
-        WhereCase.__init__(self, key, Sql.WHERE_BETWEEN, beg, end)
+class SqlWhereNull(SqlWhere):
+    def __init__(self):
+        super().__init__()
 
-    def __str__(self):
-        return '{key} {sign} {beg} {And} {end}' \
-            .format(key=self.strkey(self.key),
-                    sign=self.sign,
-                    beg=self.strvalue(self.listvalue[0]),
-                    And=Sql.AND,
-                    end=self.strvalue(self.listvalue[1]))
+    def is_true(self):
+        return False
+
+    def to_dict(self):
+        return dict(type=SQLWHERE.NULL, child=None)
 
 
-class WhereNotBetween(WhereCase):
-    def __init__(self, key, beg, end):
-        WhereCase.__init__(self, key, Sql.WHERE_BETWEEN, beg, end)
+class SqlWhereTrue(SqlWhere):
+    def __init__(self):
+        super().__init__(type=SQLWHERE.TRUE)
 
-    def __str__(self):
-        return '{key} NOT {sign} {beg} {And} {end}' \
-            .format(key=self.strkey(self.key),
-                    sign=self.sign,
-                    beg=self.strvalue(self.listvalue[0]),
-                    And=Sql.AND,
-                    end=self.strvalue(self.listvalue[1]))
+    def is_true(self):
+        return True
 
+    def to_dict(self):
+        return dict(type=self.type, child=1)
 
-class WhereIn(WhereCase):
-    def __init__(self, key, *listvalue):
-        WhereCase.__init__(self, key, Sql.WHERE_IN, *listvalue)
-
-    def __str__(self):
-        str_items = [self.strkey(self.key),
-                     self.sign,
-                     '(',
-                     ','.join([self.strvalue(value) for value in self.listvalue]),
-                     ')']
-        return ' '.join(str_items)
+    def to_sql(self):
+        return '1'
 
 
-class WhereNotIn(WhereCase):
-    def __init__(self, key, *listvalue):
-        WhereCase.__init__(self, key, Sql.WHERE_IN, *listvalue)
+class SqlWhereStr(SqlWhere):
+    def __init__(self, str_where: str):
+        super().__init__(type=SQLWHERE.STR, left_child=SqlNodeStr(str_where))
 
-    def __str__(self):
-        str_items = [self.strkey(self.key),
-                     Sql.WHERE_NOT,
-                     self.sign,
-                     '(',
-                     ','.join([self.strvalue(value) for value in self.listvalue]),
-                     ')']
-        return ' '.join(str_items)
+    def is_true(self):
+        return self.left.is_true()
 
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereStr):
+            return self.left.str == other.left.str
+        return super().is_equal(other)
 
-class WhereLike(WhereCase):
-    def __init__(self, key, like_exp):
-        WhereCase.__init__(self, key, Sql.WHERE_LIKE, like_exp)
+    def to_dict(self):
+        return dict(type=self.type, child=self.left)
 
-    def __str__(self):
-        return '{key} {sign} "{like_exp}"'\
-                .format(key=self.strkey(self.key), sign=self.sign, like_exp=self.listvalue[0])
+    def to_sql(self):
+        return self.left.to_sql()
 
 
-class WhereNotLike(WhereCase):
-    def __init__(self, key, like_exp):
-        WhereCase.__init__(self, key, Sql.WHERE_LIKE, like_exp)
+class SqlWhereBracket(SqlWhere):
+    def __init__(self, where_node: SqlWhere=SqlWhere()):
+        super().__init__(type=SQLWHERE.BRACKET, left_child=where_node)
 
-    def __str__(self):
-        return '{key} NOT {sign} "{like_exp}"'\
-                .format(key=self.strkey(self.key), sign=self.sign, like_exp=self.listvalue[0])
+    def is_true(self):
+        return self.left.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereBracket):
+            return self.left.is_equal(other.left)
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(type=SQLWHERE.BRACKET, child=self.left)
+
+    def to_sql(self):
+        return '(' + self.left.to_sql() + ')'
+
+
+class SqlWhereNode(SqlWhere):
+    def __init__(self, type: SQLWHERE=SQLWHERE.AND, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+        super().__init__(type=type, left_child=left, right_child=right)
+
+    def is_true(self):
+        return (self.left.is_true() or self.right.is_true()) and self.type.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereNode):
+            return self.left.is_equal(other.left) and \
+                    self.right.is_equal(other.right) and \
+                    self.type.is_equal(other.type)
+        return super().is_equal(other)
+
+    def to_sql(self):
+        if not self.is_true():
+            return ''
+        if self.left.is_true() and not self.right.is_true():
+            return self.left.to_sql()
+        if not self.left.is_true() and self.right.is_true():
+            return self.right.to_sql()
+        return '%s %s %s' % (self.left.to_sql(), self.type.to_sql(), self.right.to_sql())
+
+
+class SqlWhereAnd(SqlWhereNode):
+    def __init__(self, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+        super().__init__(type=SQLWHERE.AND, left=left, right=right)
+
+
+class SqlWhereOr(SqlWhereNode):
+    def __init__(self, left: SqlNode=SqlNode(), right: SqlNode=SqlNode()):
+        super().__init__(type=SQLWHERE.OR, left=left, right=right)
+
+
+class SqlWhereExpression(SqlWhere):
+    def __init__(self, type=SQLWHERE.EQUAL, left: SqlKey=SqlKey(), right: SqlNode=SqlValue()):
+        super().__init__(type, left, right)
+
+    def is_true(self):
+        return self.left.is_true() and self.type.is_true()
+
+    def is_equal(self, other):
+        if isinstance(other, SqlWhereExpression):
+            return self.left.is_equal(other.left) and \
+                   self.type.is_equal(other.type) and \
+                   self.right.is_equal(other.right)
+        return super().is_equal(other)
+
+    def to_sql(self):
+        return '%s %s %s' % (self.left.to_sql(), self.type.to_sql(), self.right.to_sql())
+
+
+class SqlWhereEqual(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.EQUAL, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereNotEqual(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.NOT_EQUAL, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereLess(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.LESS, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereLessEqual(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.LESS_EQUAL, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereGreater(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.GREATER, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereGreaterEqual(SqlWhereExpression):
+    def __init__(self, key: str, value):
+        super().__init__(SQLWHERE.GREATER_EQUAL, SqlKey(key), SqlValue(value))
+
+
+class SqlWhereIn(SqlWhereExpression):
+    def __init__(self, key: str, *list_value):
+        super().__init__(SQLWHERE.IN, SqlKey(key), SqlValueList(*list_value))
+
+
+class SqlWhereNotIn(SqlWhereIn):
+    def __init__(self, key: str, *list_value):
+        super().__init__(key, *list_value)
+        self.__type__ = SQLWHERE.NOT_IN
+
+
+class SqlWhereBetween(SqlWhereExpression):
+    def __init__(self, key: str, left_value, right_value):
+        super().__init__(SQLWHERE.BETWEEN, SqlKey(key),
+                         SqlWhereAnd(left=SqlValue(left_value), right=SqlValue(right_value)))
+
+
+class SqlWhereNotBetween(SqlWhereBetween):
+    def __init__(self, key: str, left_value, right_value):
+        super().__init__(key, left_value, right_value)
+        self.__type__ = SQLWHERE.NOT_BETWEEN
+
+
+class SqlWhereLike(SqlWhereExpression):
+    def __init__(self, key: str, like_exp: str):
+        super().__init__(SQLWHERE.LIKE, SqlKey(key), SqlValue(like_exp))
+
+
+class SqlWhereNotLike(SqlWhereExpression):
+    def __init__(self, key: str, like_exp: str):
+        super().__init__(SQLWHERE.NOT_LIKE, SqlKey(key), SqlValue(like_exp))
+
 
 
