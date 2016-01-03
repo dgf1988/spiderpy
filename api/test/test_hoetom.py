@@ -13,7 +13,7 @@ class TestHoetomObject(unittest.TestCase):
 
     def test_country(self):
         get_country = Country.get(self.db, id=3)
-        self.assertEqual(get_country.to_str(), '中国')
+        self.assertEqual(get_country.to_sql(), '中国')
 
         dict_coutry = get_country.to_dict()
         self.assertEqual(len(dict_coutry), 2)
@@ -33,7 +33,7 @@ class TestHoetomObject(unittest.TestCase):
 
     def test_rank(self):
         get_rank = Rank.get(self.db, id=3)
-        self.assertEqual(get_rank.to_str(), '三段')
+        self.assertEqual(get_rank.to_sql(), '三段')
 
         dict_rank = get_rank.to_dict()
         self.assertEqual(len(dict_rank), 2)
