@@ -280,31 +280,31 @@ class SqlTableSet(SqlNodeSet):
 
 
 class SqlLimit(SqlNode):
-    def __init__(self, top: int=0, skip: int=0):
-        self.__top__ = top
+    def __init__(self, take: int=0, skip: int=0):
+        self.__take__ = take
         self.__skip__ = skip
 
     @property
-    def top(self):
-        return self.__top__
+    def take(self):
+        return self.__take__
 
     @property
     def skip(self):
         return self.__skip__
 
     def is_true(self):
-        return self.top > 0 or self.skip > 0
+        return self.take > 0 or self.skip > 0
 
     def is_equal(self, other):
         if isinstance(other, SqlLimit):
-            return self.top == other.top and self.skip == other.skip
+            return self.take == other.take and self.skip == other.skip
         return super().is_equal(other)
 
     def to_dict(self):
-        return dict(top=self.top, skip=self.skip)
+        return dict(take=self.take, skip=self.skip)
 
     def to_sql(self):
-        return '%s,%s' % (self.top, self.skip)
+        return '%s,%s' % (self.take, self.skip)
 
 
 @enum.unique
@@ -733,5 +733,31 @@ class SqlWhereNotLike(SqlWhereExpression):
     def __init__(self, key: str, like_exp: str):
         super().__init__(SQLWHERE.NOT_LIKE, SqlKey(key), SqlValue(like_exp))
 
+
+class Sql(object):
+
+    @classmethod
+    def table_set(cls, table: str=''):
+        pass
+
+    @classmethod
+    def insert_set(cls, **kwargs):
+        pass
+
+    @classmethod
+    def where(cls, *args, **kwargs):
+        pass
+
+    @classmethod
+    def Order(cls, *args, **kwargs):
+        pass
+
+    @classmethod
+    def take(cls, take: int):
+        pass
+
+    @classmethod
+    def skip(cls, skip: int):
+        pass
 
 

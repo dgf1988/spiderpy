@@ -136,14 +136,14 @@ class MyTestCase(unittest.TestCase):
         a = SqlLimit()
         self.assertFalse(a)
         self.assertEqual(a, SqlLimit())
-        self.assertEqual(a.to_dict(), dict(top=0, skip=0))
+        self.assertEqual(a.to_dict(), dict(take=0, skip=0))
         self.assertEqual(a.to_sql(), '0,0')
 
         b = SqlLimit(1)
         self.assertTrue(b)
         self.assertNotEqual(b, a)
         self.assertEqual(b, SqlLimit(1))
-        self.assertEqual(b.to_dict(), dict(top=1, skip=0))
+        self.assertEqual(b.to_dict(), dict(take=1, skip=0))
         self.assertEqual(b.to_sql(), '1,0')
 
 
