@@ -6,7 +6,7 @@ class MyTestCase(unittest.TestCase):
     def test_to_str(self):
         print(hash(None), hash(SqlNode()), hash(object()), hash(object()), hash(''), hash(0), hash(True))
         self.assertEqual(type(SqlOrder()), SqlOrder)
-        print(SqlWhereLessEqual('a', 1).or_by(SqlWhereNotIn('name', '', 'abc', 1, 0, 0.0, False, None)).bracket().to_sql())
+        print(SqlWhereLessEqual('a', 1).or_by(SqlWhereNotIn('name', '', 'abc', 1, 0, 0.0, False, None)).bracket_self().to_sql())
         print(SqlValueList('a', 'b').to_str())
 
     def test_node(self):
@@ -87,24 +87,21 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(kv3.to_sql(), '`a` = ""')
 
     def test_key_value_set(self):
-        self.assertTrue(SqlKeyValueSet)
+        self.assertTrue(SqlSets)
 
-        s1 = SqlKeyValueSet()
+        s1 = SqlSets()
         self.assertFalse(s1)
-        self.assertEqual(s1, SqlKeyValueSet())
-        self.assertEqual(s1.to_dict(), dict(set=set()))
+        self.assertEqual(s1, SqlSets())
+        self.assertEqual(s1.to_dict(), dict())
         self.assertEqual(s1.to_sql(), '')
 
-        s2 = SqlKeyValueSet(a='', b=None, c=0, d=False)
+        s2 = SqlSets(a='', b=None, c=0, d=False)
         self.assertTrue(s2)
-        self.assertEqual(s2, SqlKeyValueSet(d=False, c=0, b=None, a=''))
-        self.assertEqual(s2.to_dict(), dict(set=set([
-            SqlKeyValue('a', ''), SqlKeyValue('b'), SqlKeyValue('c', 0), SqlKeyValue('d', False)])))
+        self.assertEqual(s2, SqlSets(d=False, c=0, b=None, a=''))
+        self.assertEqual(s2.to_dict(), dict(a='', b=None, c=0, d=False))
 
-        s3 = SqlKeyValueSet(id=None, b='')
+        s3 = SqlSets(id=None, b='')
         self.assertIn(s3.to_sql(), ('`id` = NULL,`b` = ""', '`b` = "",`id` = NULL'))
-        s3.set.add(SqlNode())
-        self.assertFalse(s3.is_true())
 
     def test_table(self):
         self.assertTrue(SqlTable)
@@ -128,6 +125,8 @@ class MyTestCase(unittest.TestCase):
         self.assertTrue(s2)
         self.assertEqual(s2, SqlTableSet('a'))
         self.assertEqual(s2.to_dict(), dict(set=set([SqlTable('a')])))
+        self.assertEqual(s2.to_sql(), '`a`')
+        s2.set.add(SqlTable('a'))
         self.assertEqual(s2.to_sql(), '`a`')
 
     def test_limit(self):

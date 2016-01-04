@@ -96,7 +96,7 @@ class Html(object):
             if self.update(db):
                 return self.id
         else:
-            insertid = db.table(Html.Table).set(urlmd5=self.urlmd5, code=self.code, htmlmd5=self.htmlmd5).insert()
+            insertid = db.table(Html.Table).set(urlmd5=self.urlmd5, code=self.code, htmlmd5=self.htmlmd5).set()
             if insertid:
                 self.id = insertid
                 return insertid

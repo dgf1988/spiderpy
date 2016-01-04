@@ -66,7 +66,7 @@ class PlayerList(HoetomDBClient):
         test_save = self.db.table(PlayerList.Table).where(playerid=playerid).select(PlayerList.ID)
         if test_save:
             return test_save[0][PlayerList.ID]
-        return self.db.table(PlayerList.Table).set(playerid=playerid).insert()
+        return self.db.table(PlayerList.Table).set(playerid=playerid).set()
 
     def save_many(self, list_playerid):
         list_save = []
@@ -129,7 +129,7 @@ class Country(object):
         test_save = db.db.table(Country.Table).where(name=self.name).select(Country.ID)
         if test_save:
             return test_save[0][Country.ID]
-        return db.db.table(Country.Table).set(name=self.name).insert()
+        return db.db.table(Country.Table).set(name=self.name).set()
 
     @staticmethod
     def list(db: HoetomDBClient, length=0, skip=0):
@@ -165,7 +165,7 @@ class Rank(object):
         test_save = db.db.table(Rank.Table).where(rank=self.rank).select(Rank.ID)
         if test_save:
             return test_save[0][Rank.ID]
-        return db.db.table(Rank.Table).set(rank=self.rank).insert()
+        return db.db.table(Rank.Table).set(rank=self.rank).set()
 
     @staticmethod
     def list(db: HoetomDBClient, length=0, skip=0):
@@ -224,7 +224,7 @@ class PlayerInfo(object):
                          p_nat=nat,
                          p_rank=rank,
                          p_birth=self.p_birth)\
-                    .insert()
+                    .set()
 
     @staticmethod
     def exist_name(db: HoetomDBClient, name: str):
@@ -362,7 +362,7 @@ class HoetomHtmlStor(object):
         find = db.db.table(HoetomHtmlStor.Table).where(htmlurl=urlmd5).select('id')
         if find:
             return find[0]['id']
-        insert = db.db.table(HoetomHtmlStor.Table).set(htmlurl=urlmd5).insert()
+        insert = db.db.table(HoetomHtmlStor.Table).set(htmlurl=urlmd5).set()
         if insert:
             return insert
 

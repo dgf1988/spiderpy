@@ -48,7 +48,7 @@ class Country(object):
         test_save = db.table(Country.Table).where(name=self.name).select(Country.ID)
         if test_save:
             return test_save[0][Country.ID]
-        return db.table(Country.Table).set(name=self.name).insert()
+        return db.table(Country.Table).set(name=self.name).set()
 
     @staticmethod
     def list(db: HoetomDBClient, length=0, skip=0):
@@ -84,7 +84,7 @@ class Rank(object):
         test_save = db.table(Rank.Table).where(rank=self.rank).select(Rank.ID)
         if test_save:
             return test_save[0][Rank.ID]
-        return db.table(Rank.Table).set(rank=self.rank).insert()
+        return db.table(Rank.Table).set(rank=self.rank).set()
 
     @staticmethod
     def list(db: HoetomDBClient, length=0, skip=0):
@@ -148,7 +148,7 @@ class Player(object):
                              p_nat=nat,
                              p_rank=rank,
                              p_birth=self.p_birth)\
-                        .insert()
+                        .set()
 
     def update(self, db: HoetomDBClient):
         id = Player.find(db, hoetomid=self.hoetomid)[0][Player.ID]
