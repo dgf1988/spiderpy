@@ -1,7 +1,5 @@
 # -*- coding: utf-8 -*-
 import pymysql
-from functools import reduce
-from lib.sql import *
 
 
 class DB(object):
