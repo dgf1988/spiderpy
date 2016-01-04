@@ -1064,7 +1064,7 @@ class From(object):
         return self.__node__
 
     def set(self, **kwargs):
-        self.node['sets'].update(**kwargs)
+        self.node['sets'] = kwargs
         return self
 
     def where(self, *args, **kwargs):
@@ -1117,10 +1117,11 @@ class From(object):
 
 if __name__ == '__main__':
     print(From('html').where('id=4', name='dgf').order('id', dict(name='desc'), dict(age='asc')).take(10).select('id').to_sql())
-    print(From('user').set(name=None, birth='00000').where(id=4).update().to_dict())
+    print(From('user').set(name=None, birth='00000').where(id=4).update().to_sql())
     s = Sets(id=9, name=10)
     print(s.to_sql())
     s.set(id=10)
     print(s.to_sql())
     s.pop('name')
     print(s.to_sql())
+
