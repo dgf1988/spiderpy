@@ -1,12 +1,25 @@
 # coding=utf-8
+"""
+    SqlObject To Sql
+
+    1、将Sql语句抽象为SqlNode(Sql节点)， 一条Sql语句就是树结构的节点集合。
+    2、通过SqlNode实例出SqlObject，通过SqlObject输出Sql语句。
+    3、SqlFrom 是编程接口， 通过SqlFrom可以方便实例出SqlObject。
+
+    date: 2016年1月4日
+    by: dgf1988
+    email: dgf1988@qq.com
+"""
 import enum
-import functools
 
 
 class SqlNode(object):
     """
-    一切皆节点
-    所有节点都从这开始继承
+    1、一切皆节点
+    2、所有节点都从这开始继承
+    3、每一句SQL都是一个节点，每一个节点下都有多个或一个子节点，每一个子节点都是SQL的子句。
+    4、每一条SQL语句都抽象为一个类，每一条SQL子句都抽象为一个类。
+    5、SQL语句之间的拼接合并由类的方法提供。
     """
     def hash(self):
         """
@@ -20,7 +33,7 @@ class SqlNode(object):
 
     def is_true(self) -> bool:
         """
-        是否满足输出SQL语句的条件
+        是否能够输出合法通用的SQL语句
         :return:
         """
         return False
@@ -30,7 +43,7 @@ class SqlNode(object):
 
     def is_equal(self, other) -> bool:
         """
-        节点比较器
+        节点的基础比较器
         :param other:
         :return:
         """
@@ -45,26 +58,26 @@ class SqlNode(object):
 
     def to_dict(self) -> dict:
         """
-        输出字典
+        输出节点的字典
         :return:
         """
         return dict()
 
     def to_sql(self) -> str:
         """
-        输出SQL语句
+        输出节点的SQL语句
         :return:
         """
         return ''
 
     def to_str(self) -> str:
         """
-        输出字符串
+        输出节点的字符串
         :return:
         """
         d = self.to_dict()
         for k, v in d.items():
-            if isinstance(v, list):
+            if isinstance(v, (list, set)):
                 d[k] = [each.to_sql() for each in v if isinstance(each, SqlNode)]
             elif isinstance(v, SqlNode):
                 d[k] = v.to_sql()
@@ -75,53 +88,6 @@ class SqlNode(object):
     # for debug
     def __str__(self):
         return self.to_str()
-
-
-class SqlNodeList(SqlNode):
-    def __init__(self, *args):
-        self.__nodes__ = list(args)
-
-    @property
-    def list(self):
-        return self.__nodes__
-
-    @property
-    def type(self):
-        return SqlNode
-
-    def is_true(self):
-        if not self.list:
-            return False
-        for each in self.list:
-            if not isinstance(each, self.type):
-                return False
-            if not each.is_true():
-                return False
-        return True
-
-    def is_equal(self, other):
-        if isinstance(other, SqlNodeList):
-            return self.list == other.list
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(list=self.list)
-
-    def to_sql(self):
-        return ','.join([each.to_sql() for each in self.list if isinstance(each, self.type)])
-
-
-class SqlNodeSet(SqlNodeList):
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.__nodes__ = set(self.__nodes__)
-
-    @property
-    def set(self):
-        return self.__nodes__
-
-    def to_dict(self):
-        return dict(set=self.set)
 
 
 class SqlNodeStr(SqlNode):
@@ -175,6 +141,20 @@ class SqlKey(SqlNode):
         return '`%s`' % self.key
 
 
+class SqlTable(SqlKey):
+    @property
+    def table(self):
+        return self.key
+
+    def is_equal(self, other):
+        if isinstance(other, SqlTable):
+            return self.table == other.table
+        return super().is_equal(other)
+
+    def to_dict(self):
+        return dict(table=self.table)
+
+
 class SqlValue(SqlNode):
     def __init__(self, value=None):
         self.__value__ = value
@@ -202,18 +182,6 @@ class SqlValue(SqlNode):
         if isinstance(self.value, SqlNode):
             return self.value.to_sql()
         return '"%s"' % self.value.__str__()
-
-
-class SqlValueList(SqlNodeList):
-    def __init__(self, *value_list):
-        super().__init__(*[SqlValue(value) for value in value_list])
-
-    @property
-    def type(self):
-        return SqlValue
-
-    def to_sql(self):
-        return '(' + super().to_sql() + ')'
 
 
 class SqlKeyValue(SqlNode):
@@ -259,7 +227,7 @@ class SqlSets(SqlNode):
         self.sets.update(**kwargs)
 
     def pop(self, key: str, default=None):
-        return self.sets.pop(key=key, default=default)
+        return self.sets.pop(key, default)
 
     def is_true(self):
         return bool(self.sets)
@@ -276,18 +244,38 @@ class SqlSets(SqlNode):
         return ','.join([SqlKeyValue(k, v).to_sql() for k, v in self.sets.items()])
 
 
-class SqlTable(SqlKey):
+class SqlNodeList(SqlNode):
+    def __init__(self, *args):
+        self.__nodes__ = list(args)
+
     @property
-    def table(self):
-        return self.key
+    def list(self):
+        return self.__nodes__
+
+    @property
+    def type(self):
+        return SqlNode
+
+    def is_true(self):
+        if not self.list:
+            return False
+        for each in self.list:
+            if not isinstance(each, self.type):
+                return False
+            if not each.is_true():
+                return False
+        return True
 
     def is_equal(self, other):
-        if isinstance(other, SqlTable):
-            return self.table == other.table
+        if isinstance(other, SqlNodeList):
+            return self.list == other.list
         return super().is_equal(other)
 
     def to_dict(self):
-        return dict(table=self.table)
+        return dict(list=self.list)
+
+    def to_sql(self):
+        return ','.join([each.to_sql() for each in self.list if isinstance(each, self.type)])
 
 
 class SqlSelectionList(SqlNodeList):
@@ -318,6 +306,35 @@ class SqlSelectionList(SqlNodeList):
             return '*'
         else:
             return ','.join([str(each) for each in self.select])
+
+
+class SqlValueList(SqlNodeList):
+    def __init__(self, *value_list):
+        super().__init__(*[SqlValue(value) for value in value_list])
+
+    @property
+    def type(self):
+        return SqlValue
+
+    def to_sql(self):
+        return '(' + super().to_sql() + ')'
+
+
+class SqlNodeSet(SqlNodeList):
+    """
+    节点集合
+    对节点顺序有要求则不能使用。
+    """
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.__nodes__ = set(self.__nodes__)
+
+    @property
+    def set(self):
+        return self.__nodes__
+
+    def to_dict(self):
+        return dict(set=self.set)
 
 
 class SqlTableSet(SqlNodeSet):
@@ -442,7 +459,7 @@ class SqlOrder(SqlNode):
         return '%s %s' % (self.key.to_sql(), self.order.to_sql())
 
     @classmethod
-    def from_list(cls, *args):
+    def from_list(cls, *args) -> list:
         order_list = []
         for each in args:
             if isinstance(each, str):
@@ -1031,6 +1048,9 @@ class SqlSelect(SqlMethod):
 
 
 class SqlFrom(object):
+    """
+    SqlObject 的 API
+    """
     def __init__(self, table: str):
         self.__node__ = dict(
                 table=table,
