@@ -28,11 +28,11 @@ class DB(object):
             self._cursor = self._conn.cursor()
         return self
 
-    def db(self, db: str):
+    def set_db(self, db: str):
         self.__args__['db'] = db
         return self._conn.select_db(db)
 
-    def tables(self, db=''):
+    def get_tables(self, db=''):
         if db:
             self.execute('show tables from %s' % db)
         else:
@@ -46,7 +46,7 @@ class DB(object):
             db = self.__args__['db']
         if not db:
             raise ValueError('not select db')
-        tables = self.tables(db)
+        tables = self.get_tables(db)
         for each in tables:
             for k, v in each.items():
                 if v == table:
