@@ -655,7 +655,7 @@ class Where(Node):
         for each in args:
             if isinstance(each, str):
                 where = where.and_by(WhereStr(each))
-            elif isinstance(each, Where()):
+            elif isinstance(each, Where):
                 where = where.and_by(each)
         for k, v in kwargs.items():
             where = where.and_by(WhereEqual(k, v))
@@ -1062,6 +1062,13 @@ class From(object):
     @property
     def node(self):
         return self.__node__
+
+    def clear(self):
+        self.node.update(
+                sets=dict(),
+                where=WhereNull(),
+                order=OrderList(),
+                limit=Limit())
 
     def set(self, **kwargs):
         self.node['sets'] = kwargs

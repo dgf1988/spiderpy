@@ -1,4 +1,5 @@
 import unittest
+from lib import orm
 
 
 class MyTestCase(unittest.TestCase):
