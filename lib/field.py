@@ -1,14 +1,27 @@
 # coding: utf-8
 from lib import db
-from lib import sql
 
 import collections
+import datetime
 import functools
+
+"""
+
+    example:
+        @table_name('country')
+        @table_primarykey('id')
+        @table_columns('id', 'name')
+        class Country(Table):
+            id = IntField(auto_increment=True)
+            name = CharField()
+
+"""
 
 
 class Field(object):
     def __init__(self, name: str, db_type: str, py_type: type, length: int, default=None,
-                 nullable: bool=False, auto_increment: bool=False, current_timestamp: bool=False, on_update: bool=False):
+                 nullable: bool=False, auto_increment: bool=False,
+                 current_timestamp: bool=False, on_update: bool=False):
         # 字段名
         self.name = name
         # 数据库类型
@@ -28,14 +41,27 @@ class Field(object):
         # 自动 - 更新时间
         self.on_update = on_update
 
+    def allow_insert(self):
+        return self.auto_increment is False and self.current_timestamp is False and self.on_update is False
+
+    def allow_update(self):
+        return self.allow_insert()
+
     def __str__(self):
-        return 'Field(name: %s, db_type: %s, py_type: %s, length: %s, default: %s, nullable: %s, auto_increment: %s, current_timestamp: %s, on_update: %s)' % \
-                (self.name, self.db_type, self.py_type, self.length, self.default, self.nullable, self.auto_increment, self.current_timestamp, self.on_update)
+        return 'Field(name: %s, db_type: %s, py_type: %s, length: %s, default: %s, ' \
+               'nullable: %s, auto_increment: %s, current_timestamp: %s, on_update: %s)' % \
+                (self.name, self.db_type, self.py_type, self.length, self.default,
+                 self.nullable, self.auto_increment, self.current_timestamp, self.on_update)
 
 
 class IntField(Field):
     def __init__(self, name: str='', length: int=11, default=None, nullable=False, auto_increment=False):
         super().__init__(name, 'INT', int, length, default, nullable, auto_increment, False, False)
+
+
+class PrimaryKey(IntField):
+    def __init__(self, name: str=''):
+        super().__init__(name, auto_increment=True)
 
 
 class CharField(Field):
@@ -55,7 +81,7 @@ class TextField(Field):
 
 class DateField(Field):
     def __init__(self, name: str='', default=None, nullable=False, on_update=False):
-        super().__init__(name, 'DATE', str, 0, default, nullable, False, False, on_update)
+        super().__init__(name, 'DATE', datetime.date, 0, default, nullable, False, False, on_update)
 
 
 class TimeField(Field):
@@ -78,108 +104,235 @@ class TimestampField(Field):
         super().__init__(name, 'TIMESTAMP', str, 0, default, nullable, False, current_timestamp, on_update)
 
 
-class Table(object):
+class Table(collections.OrderedDict):
+    __table_name__ = ''
+    __table_primarykey__ = []
+    __table_mappings__ = collections.OrderedDict()
+
     def __init__(self, **kwargs):
-        for k, v in self.table_mappings.items():
-            setattr(self, k, kwargs.get(k) if k in kwargs else v.default)
+        super().__init__()
+        for k, v in self.__table_mappings__.items():
+            self[k] = kwargs.get(k) if k in kwargs else v.default
 
     def __setattr__(self, key, value):
-        if key in self.table_mappings:
-            return super().__setattr__(key, value)
-        else:
-            raise KeyError('the key (%s) not in %s' % (key, self.table_mappings.keys()))
+        self[key] = value
+
+    def __getattr__(self, item):
+        return self[item]
 
     def __setitem__(self, key, value):
-        setattr(self, key, value)
+        if key in self.__table_mappings__:
+            if not isinstance(value, self.__table_mappings__[key].py_type) and value is not None:
+                raise TypeError('the value "%s" not isinstance %s' % (value, self.__table_mappings__[key].py_type))
+            super().__setitem__(key, value)
+        else:
+            raise KeyError('the key "%s" not in %s' % (key, self.__table_mappings__.keys()))
 
-    def __getitem__(self, item):
-        return getattr(self, item)
+    @property
+    def primarykey(self):
+        return self[self.get_table_primarykey()]
 
-    def __str__(self):
-        return '%s(' % self.table_name + \
-               ', '.join([key+': '+getattr(self, key).__str__() for key in self.table_mappings.keys()]) + ')'
+    @primarykey.setter
+    def primarykey(self, value):
+        self[self.get_table_primarykey()] = value
 
-    def get_primarykey(self):
-        return getattr(self, self.table_primarykey[0])
+    @property
+    def has_primarykey(self):
+        return bool(self[self.get_table_primarykey()])
 
-    def to_dict(self):
-        todict = collections.OrderedDict()
-        for key in self.table_mappings.keys():
-            todict[key] = getattr(self, key)
-        return todict
+    @classmethod
+    def get_table_name(cls):
+        return cls.__table_name__
+
+    @classmethod
+    def set_table_name(cls, name: str):
+        cls.__table_name__ = name
+
+    @classmethod
+    def get_table_primarykey(cls):
+        if not cls.__table_primarykey__:
+            cls.__table_primarykey__ = \
+                    [key for key, value in cls.__table_mappings__.items() if isinstance(value, PrimaryKey)]
+            if not cls.__table_primarykey__:
+                raise ValueError('not exits primary key')
+            return cls.get_table_primarykey()
+        else:
+            return cls.__table_primarykey__[0]
+
+    @classmethod
+    def set_table_primarykey(cls, *key):
+        cls.__table_primarykey__ = key
+
+    @classmethod
+    def get_table_mappings(cls):
+        return cls.__table_mappings__
+
+    @classmethod
+    def set_table_mappings(cls, mappings: collections.OrderedDict):
+        cls.__table_mappings__ = mappings
 
 
-class DbSet(db.Database):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+class ForeignKey(Field):
+    def __init__(self, name: str='', table: type=Table):
+        if not issubclass(table, Table):
+            raise TypeError()
+        foreign = getattr(table, table.get_table_primarykey())
+        super().__init__(name, foreign.db_type, table, foreign.length, foreign.default, foreign.nullable,
+                         foreign.auto_increment, foreign.current_timestamp, foreign.on_update)
 
-    def table_set(self, table: type):
-        setattr(self, table.table_name, TableSet(table, self))
-        return getattr(self, table.table_name)
+
+class DbSet(object):
+    db_info = dict()
+
+    def __init__(self, db_obj: db.Database=None):
+        self.db = db_obj if db_obj is not None else db.Database()
+        if self.db_info:
+            self.db.info.update(**self.db_info)
+
+    def open(self):
+        self.db.open()
+        return self
+
+    def __enter__(self):
+        return self.open()
+
+    def close(self):
+        self.db.close()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.close()
 
 
 class TableSet(object):
-    def __init__(self, table: type, db: db.Database=None):
-        self.table = table
-        self.name = table.table_name
-        self.primarykey = table.table_primarykey[0]
-        self.mappings = table.table_mappings
-        self.db = db
+    def __init__(self, db_obj: db.Database=None, table: type=Table):
+        if issubclass(table, Table):
+            self.table = table
+            self.name = table.get_table_name()
+            self.primarykey = table.get_table_primarykey()
+            self.mappings = table.get_table_mappings()
+            self.db = db_obj
+        else:
+            raise TypeError()
+
+    def insert(self, obj: Table=None):
+        toadd = collections.OrderedDict(
+                [(key, obj[key] if not isinstance(self.mappings[key], ForeignKey) and not isinstance(obj[key], Table)
+                 else TableSet(self.db, self.mappings[key].py_type).insert(obj[key])
+                 if not obj[key].has_primarykey else obj[key].primarykey)
+                 for key, field in self.mappings.items()
+                 if (field.allow_insert() or isinstance(self.mappings[key], ForeignKey)) and key in obj.keys()])
+        sqlitems = ['insert into %s' % self.name,
+                    '('+','.join(toadd.keys())+')',
+                    'values ("'+'","'.join([value.__str__() for value in toadd.values()])+'")']
+        if self.db.execute(' '.join(sqlitems)):
+            return self.db.insert_id()
+
+    def delete(self, primary_key):
+        if primary_key:
+            return self.db.execute('delete from %s where %s = "%s"' % (self.name, self.primarykey, primary_key))
+
+    def update(self, obj: Table):
+        primarykey = obj[self.primarykey]
+        toupdate = collections.OrderedDict(
+                [(key, obj[key]) for key, field in self.mappings.items() if field.allow_update()])
+        sqlitems = [
+            'update %s set ' % self.name,
+            ','.join(['%s = "%s"' % (key, value) for key, value in toupdate.items()]),
+            'where %s = "%s"' % (self.primarykey, primarykey)
+        ]
+        return self.db.execute(' '.join(sqlitems))
 
     def get(self, primary_key):
-        sql = 'select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)
-        if self.db.execute(sql):
-            return self.db.fetch_one()
+        if not primary_key:
+            return None
+        if self.db.execute('select * from %s where %s = "%s"' % (self.name, self.primarykey, primary_key)):
+            return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey)
+                                 else TableSet(self.db, self.mappings[k].py_type).get(v)
+                                 for k, v in self.db.fetch_one().items()})
 
-    def list(self):
-        if self.db.execute('select * from %s order by id asc' % (self.name,)):
-            return self.db.fetch_all()
+    def list(self, skip=0, take=10):
+        if self.db.execute('select * from %s order by id desc limit %s,%s' % (self.name, skip, take)):
+            return [self.table(
+                        **{k: v if not isinstance(self.mappings[k], ForeignKey)
+                            else TableSet(self.db, self.mappings[k].py_type).get(v)
+                           for k, v in one.items()})
+                    for one in self.db.fetch_all()]
+
+    def count(self):
+        if self.db.execute('select count(*) as num from %s' % self.name):
+            return self.db.fetch_one()['num']
+
+
+class QuerySet(object):
+    def __init__(self, db_obj: db.Database=None, query=None):
+        pass
 
 
 def table_columns(*columns):
     def set_columns(cls: type):
         mappings = collections.OrderedDict()
         for column in columns:
-            if column in cls.__dict__ and isinstance(cls.__dict__[column], Field):
+            if column in cls.__dict__ and isinstance(cls.__dict__[column], (Field, type)):
                 mappings[column] = cls.__dict__[column]
-        cls.table_mappings = mappings
+        cls.set_table_mappings(mappings)
         return cls
     return set_columns
 
 
-def table_primarykey(*keys):
-    def set_primarykey(cls: type):
-        setattr(cls, 'table_primarykey', keys)
-        return cls
-    return set_primarykey
-
-
 def table_name(name: str):
     def set_name(cls: type):
-        cls.table_name = name
+        cls.set_table_name(name)
         return cls
     return set_name
 
 
-def database_tables(*tables):
-    def set_table(cls: type):
+def table_primarykey(*key):
+    def set_primarykey(cls: type):
+        cls.set_table_primarykey(*key)
         return cls
-    return set_table
+    return set_primarykey
+
+
+def database_set(**kwargs):
+    def set_database(cls: type):
+        cls.db_info = kwargs
+        return cls
+    return set_database
 
 
 @table_name('country')
-@table_primarykey('id')
 @table_columns('id', 'name')
 class Country(Table):
-    id = IntField(auto_increment=True)
+    id = PrimaryKey()
     name = CharField()
 
 
-class Hoetom(DbSet):
+@table_name('rank')
+@table_columns('id', 'rank')
+class Rank(Table):
+    id = PrimaryKey()
+    rank = CharField()
 
-    def __init__(self, user='root', passwd='guofeng001', db='hoetom'):
-        super().__init__(user=user, passwd=passwd, db=db)
-        self.table_set(Country)
+
+@table_name('player')
+@table_columns('id', 'hoetomid', 'p_name', 'p_sex', 'p_nat', 'p_rank', 'p_birth')
+class Player(Table):
+    id = PrimaryKey()
+    hoetomid = IntField()
+    p_name = CharField()
+    p_sex = IntField()
+    p_nat = ForeignKey(table=Country)
+    p_rank = ForeignKey(table=Rank)
+    p_birth = DateField()
+
+
+@database_set(user='root', passwd='guofeng001', db='hoetom')
+class Hoetom(DbSet):
+    def __init__(self):
+        super().__init__()
+        self.country = TableSet(self.db, Country)
+        self.rank = TableSet(self.db, Rank)
+        self.player = TableSet(self.db, Player)
 
 
 def print_dict(kwargs: dict):
@@ -188,11 +341,10 @@ def print_dict(kwargs: dict):
 
 
 if __name__ == '__main__':
-    c = Country(id=3, name='中国')
-    print(c)
     with Hoetom() as hoetom:
-        c5 = Country(**hoetom.country.get(10))
-        print(c5)
-        list_c = hoetom.country.list()
-        for c in list_c:
-            print(Country(**c))
+        for p in hoetom.player.list():
+            pass
+            # print(p)
+        newp = Player(hoetomid=20001, p_name='国锋', p_sex=2, p_nat=Country(name='水星'), p_birth='2015-01-01')
+        print(newp)
+

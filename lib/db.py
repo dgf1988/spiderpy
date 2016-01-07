@@ -46,9 +46,9 @@ class Database(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.close()
 
-    def set_db(self, db: str):
-        self.info.db = db
-        return self.connection.select_db(db)
+    def set_db(self, str_db: str):
+        self.info.db = str_db
+        return self.connection.select_db(str_db)
 
     def commit(self):
         return self.connection.commit()
