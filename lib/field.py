@@ -42,9 +42,17 @@ class Field(object):
         self.on_update = on_update
 
     def allow_insert(self):
+        """
+        允许插入的字段
+        :return:
+        """
         return self.auto_increment is False and self.current_timestamp is False and self.on_update is False
 
     def allow_update(self):
+        """
+        允许更新的字段
+        :return:
+        """
         return self.allow_insert()
 
     def __str__(self):
@@ -136,7 +144,6 @@ class Table(collections.OrderedDict):
     def primarykey(self, value):
         self[self.get_table_primarykey()] = value
 
-    @property
     def has_primarykey(self):
         return bool(self[self.get_table_primarykey()])
 
@@ -171,14 +178,29 @@ class Table(collections.OrderedDict):
     def set_table_mappings(cls, mappings: collections.OrderedDict):
         cls.__table_mappings__ = mappings
 
+    @staticmethod
+    def value_to_sql(value):
+        if value is None:
+            return 'NULL'
+        elif isinstance(value, (int, float, bool)):
+            return value.__str__()
+        else:
+            return '"%s"' % value
+
 
 class ForeignKey(Field):
-    def __init__(self, name: str='', table: type=Table):
+    def __init__(self, name: str='', table: type=Table, default=None, nullable=False):
         if not issubclass(table, Table):
             raise TypeError()
         foreign = getattr(table, table.get_table_primarykey())
-        super().__init__(name, foreign.db_type, table, foreign.length, foreign.default, foreign.nullable,
+        super().__init__(name, foreign.db_type, table, foreign.length, default, nullable,
                          foreign.auto_increment, foreign.current_timestamp, foreign.on_update)
+
+    def allow_insert(self):
+        return True
+
+    def allow_update(self):
+        return True
 
 
 class DbSet(object):
@@ -206,54 +228,76 @@ class DbSet(object):
 class TableSet(object):
     def __init__(self, db_obj: db.Database=None, table: type=Table):
         if issubclass(table, Table):
+            self.db = db_obj
             self.table = table
             self.name = table.get_table_name()
             self.primarykey = table.get_table_primarykey()
             self.mappings = table.get_table_mappings()
-            self.db = db_obj
         else:
             raise TypeError()
 
     def insert(self, obj: Table=None):
-        toadd = collections.OrderedDict(
-                [(key, obj[key] if not isinstance(self.mappings[key], ForeignKey) and not isinstance(obj[key], Table)
-                 else TableSet(self.db, self.mappings[key].py_type).insert(obj[key])
-                 if not obj[key].has_primarykey else obj[key].primarykey)
-                 for key, field in self.mappings.items()
-                 if (field.allow_insert() or isinstance(self.mappings[key], ForeignKey)) and key in obj.keys()])
-        sqlitems = ['insert into %s' % self.name,
-                    '('+','.join(toadd.keys())+')',
-                    'values ("'+'","'.join([value.__str__() for value in toadd.values()])+'")']
-        if self.db.execute(' '.join(sqlitems)):
-            return self.db.insert_id()
+        if not obj.has_primarykey():
+            toadd = collections.OrderedDict(
+                    [(key, obj[key]
+                     if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
+                     else obj[key].primarykey
+                     if isinstance(obj[key], Table) and obj[key].has_primarykey()
+                     else TableSet(self.db, self.mappings[key].py_type).insert(obj[key]))
+                     for key, field in self.mappings.items()
+                     if field.allow_insert() and key in obj.keys()])
+            sqlitems = ['insert into %s' % self.name,
+                        '('+','.join(toadd.keys())+')',
+                        'values ('+','.join([Table.value_to_sql(value) for value in toadd.values()])+')']
+            sql = ' '.join(sqlitems)
+            if self.db.execute(sql):
+                return self.db.insert_id()
+
+    def update(self, obj: Table):
+        if obj.has_primarykey():
+            toupdate = collections.OrderedDict(
+                    [(key, obj[key] if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
+                      else obj[key].primarykey)
+                     for key, field in self.mappings.items()
+                     if field.allow_update() and key in obj.keys()])
+            sqlitems = [
+                'update %s set ' % self.name,
+                ','.join(['%s = %s' % (key, Table.value_to_sql(value)) for key, value in toupdate.items()]),
+                'where %s = %s' % (obj.get_table_primarykey(), obj.primarykey)
+            ]
+            sql = ' '.join(sqlitems)
+            return self.db.execute(sql)
 
     def delete(self, primary_key):
         if primary_key:
-            return self.db.execute('delete from %s where %s = "%s"' % (self.name, self.primarykey, primary_key))
-
-    def update(self, obj: Table):
-        primarykey = obj[self.primarykey]
-        toupdate = collections.OrderedDict(
-                [(key, obj[key]) for key, field in self.mappings.items() if field.allow_update()])
-        sqlitems = [
-            'update %s set ' % self.name,
-            ','.join(['%s = "%s"' % (key, value) for key, value in toupdate.items()]),
-            'where %s = "%s"' % (self.primarykey, primarykey)
-        ]
-        return self.db.execute(' '.join(sqlitems))
+            return self.db.execute('delete from %s where %s = %s' % (self.name, self.primarykey, primary_key))
 
     def get(self, primary_key):
-        if not primary_key:
-            return None
-        if self.db.execute('select * from %s where %s = "%s"' % (self.name, self.primarykey, primary_key)):
-            return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey)
-                                 else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                 for k, v in self.db.fetch_one().items()})
+        if primary_key:
+            if self.db.execute('select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)):
+                return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                                     else TableSet(self.db, self.mappings[k].py_type).get(v)
+                                     for k, v in self.db.fetch_one().items()})
+
+    def find(self, **kwargs):
+        if kwargs:
+            if self.db.execute('select * from %s where %s' %
+                               (self.name,
+                                ' and '.join(['%s = %s' % (key, Table.value_to_sql(value)) if value is not None
+                                              else '%s is Null' % key
+                                              for key, value in kwargs.items()])
+                                )
+                               ):
+                return [self.table(
+                        **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                            else TableSet(self.db, self.mappings[k].py_type).get(v)
+                           for k, v in one.items()})
+                        for one in self.db.fetch_all()]
 
     def list(self, skip=0, take=10):
-        if self.db.execute('select * from %s order by id desc limit %s,%s' % (self.name, skip, take)):
+        if self.db.execute('select * from %s limit %s,%s' % (self.name, skip, take)):
             return [self.table(
-                        **{k: v if not isinstance(self.mappings[k], ForeignKey)
+                        **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)
                            for k, v in one.items()})
                     for one in self.db.fetch_all()]
@@ -342,9 +386,11 @@ def print_dict(kwargs: dict):
 
 if __name__ == '__main__':
     with Hoetom() as hoetom:
-        for p in hoetom.player.list():
-            pass
-            # print(p)
-        newp = Player(hoetomid=20001, p_name='国锋', p_sex=2, p_nat=Country(name='水星'), p_birth='2015-01-01')
-        print(newp)
+        print(hoetom.player.count())
+        print(hoetom.country.count())
+        print(hoetom.rank.count())
+        for p in hoetom.player.find(hoetomid=None):
+            print(p)
+
+
 
