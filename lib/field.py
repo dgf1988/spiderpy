@@ -109,17 +109,22 @@ class DatetimeField(Field):
 
 class TimestampField(Field):
     def __init__(self, name: str='', default=None, nullable=False, current_timestamp=False, on_update=False):
-        super().__init__(name, 'TIMESTAMP', str, 0, default, nullable, False, current_timestamp, on_update)
+        super().__init__(name, 'TIMESTAMP', datetime.datetime, 0, default, nullable, False, current_timestamp, on_update)
 
 
 class Table(collections.OrderedDict):
+    # 表名
     __table_name__ = ''
+    # 主键
     __table_primarykey__ = []
+    # 字段映射
     __table_mappings__ = collections.OrderedDict()
 
     def __init__(self, **kwargs):
         super().__init__()
+        # 初始化字段
         for k, v in self.__table_mappings__.items():
+            # 有指定值则使用指定值，没有则使用默认值
             self[k] = kwargs.get(k) if k in kwargs else v.default
 
     def __setattr__(self, key, value):
@@ -130,21 +135,24 @@ class Table(collections.OrderedDict):
 
     def __setitem__(self, key, value):
         if key in self.__table_mappings__:
-            if not isinstance(value, self.__table_mappings__[key].py_type) and value is not None:
-                raise TypeError('the value "%s" not isinstance %s' % (value, self.__table_mappings__[key].py_type))
-            super().__setitem__(key, value)
+            if isinstance(value, self.__table_mappings__[key].py_type) or value is None:
+                return super().__setitem__(key, value)
+            raise TypeError('the value %s type %s not isinstance %s' % (value, type(value), self.__table_mappings__[key].py_type))
         else:
-            raise KeyError('the key "%s" not in %s' % (key, self.__table_mappings__.keys()))
+            raise KeyError('the key %s not in %s' % (key, self.__table_mappings__.keys()))
 
     @property
     def primarykey(self):
+        # 主键取值
         return self[self.get_table_primarykey()]
 
     @primarykey.setter
     def primarykey(self, value):
+        # 主键赋值
         self[self.get_table_primarykey()] = value
 
     def has_primarykey(self):
+        # 主键是否有值
         return bool(self[self.get_table_primarykey()])
 
     @classmethod
@@ -188,6 +196,38 @@ class Table(collections.OrderedDict):
             return '"%s"' % value
 
 
+def table_name(name: str):
+    def set_name(cls: type):
+        cls.set_table_name(name)
+        return cls
+    return set_name
+
+
+def table_primarykey(*key):
+    def set_primarykey(cls: type):
+        cls.set_table_primarykey(*key)
+        return cls
+    return set_primarykey
+
+
+def table_columns(*columns):
+    def set_columns(cls: type):
+        mappings = collections.OrderedDict()
+        for column in columns:
+            if column in cls.__dict__ and isinstance(cls.__dict__[column], (Field, type)):
+                mappings[column] = cls.__dict__[column]
+        cls.set_table_mappings(mappings)
+        return cls
+    return set_columns
+
+
+def dbset_tables(**kwargs):
+    def set_tables(cls):
+        cls.__tables__ = kwargs
+        return cls
+    return set_tables
+
+
 class ForeignKey(Field):
     def __init__(self, name: str='', table: type=Table, default=None, nullable=False):
         if not issubclass(table, Table):
@@ -204,12 +244,8 @@ class ForeignKey(Field):
 
 
 class DbSet(object):
-    db_info = dict()
-
     def __init__(self, db_obj: db.Database=None):
         self.db = db_obj if db_obj is not None else db.Database()
-        if self.db_info:
-            self.db.info.update(**self.db_info)
 
     def open(self):
         self.db.open()
@@ -224,11 +260,22 @@ class DbSet(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.close()
 
+    def set_table(self, table):
+        if isinstance(table, type) and issubclass(table, Table):
+            return TableSet(self.db, table)
+        return None
 
-class TableSet(object):
+    def __getattr__(self, item):
+        if item in self.__tables__:
+            return TableSet(self.db, self.__tables__[item])
+        else:
+            return super().__getattribute__(item)
+
+
+class TableSet(DbSet):
     def __init__(self, db_obj: db.Database=None, table: type=Table):
+        super().__init__(db_obj)
         if issubclass(table, Table):
-            self.db = db_obj
             self.table = table
             self.name = table.get_table_name()
             self.primarykey = table.get_table_primarykey()
@@ -284,7 +331,7 @@ class TableSet(object):
             if self.db.execute('select * from %s where %s' %
                                (self.name,
                                 ' and '.join(['%s = %s' % (key, Table.value_to_sql(value)) if value is not None
-                                              else '%s is Null' % key
+                                              else '%s IS NULL' % key
                                               for key, value in kwargs.items()])
                                 )
                                ):
@@ -310,38 +357,6 @@ class TableSet(object):
 class QuerySet(object):
     def __init__(self, db_obj: db.Database=None, query=None):
         pass
-
-
-def table_columns(*columns):
-    def set_columns(cls: type):
-        mappings = collections.OrderedDict()
-        for column in columns:
-            if column in cls.__dict__ and isinstance(cls.__dict__[column], (Field, type)):
-                mappings[column] = cls.__dict__[column]
-        cls.set_table_mappings(mappings)
-        return cls
-    return set_columns
-
-
-def table_name(name: str):
-    def set_name(cls: type):
-        cls.set_table_name(name)
-        return cls
-    return set_name
-
-
-def table_primarykey(*key):
-    def set_primarykey(cls: type):
-        cls.set_table_primarykey(*key)
-        return cls
-    return set_primarykey
-
-
-def database_set(**kwargs):
-    def set_database(cls: type):
-        cls.db_info = kwargs
-        return cls
-    return set_database
 
 
 @table_name('country')
@@ -370,27 +385,30 @@ class Player(Table):
     p_birth = DateField()
 
 
-@database_set(user='root', passwd='guofeng001', db='hoetom')
+@table_name('playerid')
+@table_columns('id', 'playerid', 'posted')
+class Playerid(Table):
+    id = PrimaryKey()
+    playerid = IntField()
+    posted = TimestampField(current_timestamp=True)
+
+
+@dbset_tables(player=Player, playerid=Playerid, country=Country, rank=Rank)
 class Hoetom(DbSet):
     def __init__(self):
-        super().__init__()
-        self.country = TableSet(self.db, Country)
-        self.rank = TableSet(self.db, Rank)
-        self.player = TableSet(self.db, Player)
-
-
-def print_dict(kwargs: dict):
-    for k, v in kwargs.items():
-        print(k, ':\n\t', v)
+        super().__init__(db.Database(user='root', passwd='guofeng001', db='hoetom'))
 
 
 if __name__ == '__main__':
     with Hoetom() as hoetom:
-        print(hoetom.player.count())
+        print(hoetom.playerid.count())
         print(hoetom.country.count())
-        print(hoetom.rank.count())
-        for p in hoetom.player.find(hoetomid=None):
-            print(p)
+        print(hoetom.set_table(Player).count())
+        for playerid in hoetom.set_table(Player).list():
+            print(playerid)
+        hoetom.db.execute('select count(*) as num from html')
+        num = hoetom.db.fetch_one()['num']
+        print(num)
 
 
 
