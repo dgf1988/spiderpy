@@ -1,6 +1,7 @@
 # coding: utf-8
 from lib import db
 
+import enum
 import collections
 import datetime
 import functools
@@ -260,7 +261,7 @@ class DbSet(object):
     def __exit__(self, exc_type, exc_val, exc_tb):
         return self.close()
 
-    def set_table(self, table):
+    def table_set(self, table):
         if isinstance(table, type) and issubclass(table, Table):
             return TableSet(self.db, table)
         return None
@@ -310,7 +311,7 @@ class TableSet(DbSet):
             sqlitems = [
                 'update %s set ' % self.name,
                 ','.join(['%s = %s' % (key, Table.value_to_sql(value)) for key, value in toupdate.items()]),
-                'where %s = %s' % (obj.get_table_primarykey(), obj.primarykey)
+                'where %s = %s' % (self.primarykey, obj.primarykey)
             ]
             sql = ' '.join(sqlitems)
             return self.db.execute(sql)
@@ -353,9 +354,71 @@ class TableSet(DbSet):
         if self.db.execute('select count(*) as num from %s' % self.name):
             return self.db.fetch_one()['num']
 
+    def where(self, where):
+        return QuerySet(self.db, self.table, where=where)
+
+    def order(self, order):
+        return QuerySet(self.db, self.table, order=order)
+
+    def take(self, take):
+        return QuerySet(self.db, self.table, take=take)
+
+    def skip(self, skip):
+        return QuerySet(self.db, self.table, skip=skip)
+
+
+class QUERY(enum.Enum):
+    INSERT = 1
+    DELETE = 2
+    UPDATE = 3
+    SELECT = 4
+
+
+class Query(dict):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        pass
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+    def __getattr__(self, key):
+        return self[key]
+
+    def to_sql(self):
+        pass
+
 
 class QuerySet(object):
-    def __init__(self, db_obj: db.Database=None, query=None):
+    def __init__(self, db_obj: db.Database, table: type, **kwargs):
+        self.db = db_obj
+        self.table = table
+        self.query = Query(**kwargs)
+        pass
+
+    def where(self, where):
+        self.query.where = where
+        return self
+
+    def and_where(self, where):
+        if 'where' in self.query:
+            self.query.where.and_where(where)
+        else:
+            return self.where(where)
+        return self
+
+    def or_where(self, where):
+        if 'where' in self.query:
+            self.query.where.or_where(where)
+        else:
+            return self.where(where)
+        return self
+
+    def order(self, order):
+        self.query.order = [order]
+        return self
+
+    def select(self,):
         pass
 
 
@@ -403,8 +466,8 @@ if __name__ == '__main__':
     with Hoetom() as hoetom:
         print(hoetom.playerid.count())
         print(hoetom.country.count())
-        print(hoetom.set_table(Player).count())
-        for playerid in hoetom.set_table(Player).list():
+        print(hoetom.table_set(Player).count())
+        for playerid in hoetom.table_set(Player).list():
             print(playerid)
         hoetom.db.execute('select count(*) as num from html')
         num = hoetom.db.fetch_one()['num']
