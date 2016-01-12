@@ -176,6 +176,8 @@ class Table(collections.OrderedDict):
     __table_name__ = ''
     # 主键
     __table_primarykey__ = []
+    # 唯一键
+    __table_uniques__ = []
     # 字段映射
     __table_mappings__ = collections.OrderedDict()
 
@@ -185,12 +187,6 @@ class Table(collections.OrderedDict):
         for k, v in self.__table_mappings__.items():
             # 有指定值则使用指定值，没有则使用默认值
             self[k] = kwargs.get(k) if k in kwargs else v.default
-
-    def __setattr__(self, key, value):
-        self[key] = value
-
-    def __getattr__(self, item):
-        return self[item]
 
     def __setitem__(self, key, value):
         if key in self.__table_mappings__:
@@ -245,6 +241,14 @@ class Table(collections.OrderedDict):
     def set_table_mappings(cls, mappings: collections.OrderedDict):
         cls.__table_mappings__ = mappings
 
+    @classmethod
+    def set_table_uniques(cls, *key):
+        cls.__table_uniques__ = list(key)
+
+    @classmethod
+    def get_table_uniques(cls):
+        return cls.__table_uniques__
+
     @staticmethod
     def value_to_sql(value):
         if value is None:
@@ -280,6 +284,13 @@ def table_columns(*columns):
         cls.set_table_mappings(mappings)
         return cls
     return set_columns
+
+
+def table_uniques(*columns):
+    def set_uniques(cls: type):
+        cls.set_table_uniques(*columns)
+        return cls
+    return set_uniques
 
 
 def dbset_tables(**kwargs):
@@ -346,7 +357,7 @@ class TableSet(DbSet):
     def new(self, **kwargs):
         return self.table(**kwargs)
 
-    def insert(self, obj: Table=None):
+    def insert(self, obj: Table):
         if not obj.has_primarykey():
             toadd = collections.OrderedDict(
                     [(key, obj[key]

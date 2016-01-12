@@ -53,7 +53,7 @@ class Html(object):
             return None
         if not encoding:
             encoding = self.Encoding
-        code, html = Url(self.url).httpget(encoding=encoding)
+        code, html = Url(self.url).httpget(charset=encoding)
         self.code = code
         self.urlmd5 = md5(self.url)
         self.html = html
@@ -131,7 +131,7 @@ class Html(object):
             raise ValueError
         if isinstance(url, str):
             url = Url(url)
-        code, html = url.httpget(encoding=encoding)
+        code, html = url.httpget(charset=encoding)
         return Html(url=url.str(), urlmd5=md5(url.str()), html=html, htmlmd5=md5(html), code=code)
 
     @staticmethod

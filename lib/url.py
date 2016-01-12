@@ -141,9 +141,9 @@ class Url(object):
     def md5(self):
         return md5(str(self).encode())
 
-    def httpget(self, encoding='utf-8', timeout=100):
+    def httpget(self, charset='utf-8', timeout=100):
         response = requests.get(self.str(), timeout=timeout)
-        response.encoding = encoding
+        response.encoding = charset
         return response.status_code, response.text
 
     def __str__(self):

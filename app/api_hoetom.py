@@ -1,12 +1,5 @@
-from lib.sqldb import *
-from bs4 import BeautifulSoup
+
 from lib.url import Url
-from lib.hash import md5
-from enum import unique, Enum
-import os
-import string
-import json
-import datetime
 import re
 
 
@@ -19,9 +12,9 @@ class HoetomClient(object):
     @staticmethod
     def httpget(url):
         if isinstance(url, str):
-            return Url(url).httpget(encoding='gbk')
+            return Url(url).httpget(charset='gbk')
         if isinstance(url, Url):
-            return url.httpget(encoding='gbk')
+            return url.httpget(charset='gbk')
     
     @staticmethod
     def gethtml(url):
