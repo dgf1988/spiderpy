@@ -1,6 +1,5 @@
 from lib.url import Url
 from lib.hash import md5
-from lib.sqldb import SqlDB, ObjectDB
 import os
 
 

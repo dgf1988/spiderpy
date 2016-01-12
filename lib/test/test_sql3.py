@@ -129,7 +129,7 @@ class MyTestCase(unittest.TestCase):
         self.assertEqual(s2, TableSet('a'))
         self.assertEqual(s2.to_dict(), dict(set=set([Table('a')])))
         self.assertEqual(s2.to_sql(), '`a`')
-        s2.set.insert(Table('a'))
+        s2.set.add(Table('a'))
         self.assertEqual(s2.to_sql(), '`a`')
 
     def test_limit(self):

@@ -1,275 +1,498 @@
-# coding = utf-8
-"""
-    Object Relational Mapping
-
-    1、将数据库对象映射为Python对象
-
-    :example
-    with DbSet(user='root', passwd='guofeng001') as db:
-        user = User(name='dgf')
-        db.user.add(user)
-        db.user.where(name='dgf').get()
-        db.user.find(id=3)
-        db.user.update(user)
-
-
-
-
-"""
-import enum
+# coding: utf-8
 from lib import db
 from lib import sql
 
+import collections
+import datetime
 
-@enum.unique
-class DEFAULT(enum.Enum):
-    NULL = 0
-    AUTO_INCREMENT = 1
-    CURRENT_TIMESTAMP = 2
-    ON_UPDATE_CURRENT_TIMESTAMP = 3
+"""
 
-    __str_auto_increment__ = 'AUTO_INCREMENT'
-    __str_null__ = 'DEFAULT NULL'
-    __str_current_timestamp__ = 'DEFAULT CURRENT_TIMESTAMP'
-    __str_on_update__ = 'DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP'
+    example:
+        @table_name('country')
+        @table_columns('id', 'name')
+        class Country(Table):
+            id = IntField(auto_increment=True)
+            name = CharField()
 
-    def to_sql(self):
-        if self == self.AUTO_INCREMENT:
-            return self.__str_auto_increment__
-        if self == self.NULL:
-            return self.__str_null__
-        if self == self.CURRENT_TIMESTAMP:
-            return self.__str_current_timestamp__
-        if self == self.ON_UPDATE_CURRENT_TIMESTAMP:
-            return self.__str_on_update__
+"""
 
 
 class Field(object):
-    def __init__(self, type: str, length=0, nullable=False, default=None):
-        if length < 0:
-            raise ValueError('length must be >= 0')
-        self.__type__ = type
-        self.__length__ = length
-        self.__nullable__ = nullable
-        self.__default__ = default
-        self.__setable__ = True
-        if self.__default__ == DEFAULT.NULL:
-            self.__nullable__ = True
-        elif self.__default__ not in \
-                (DEFAULT.AUTO_INCREMENT, DEFAULT.CURRENT_TIMESTAMP, DEFAULT.ON_UPDATE_CURRENT_TIMESTAMP):
-            self.__setable__ = False
+    def __init__(self, name: str, db_type: str, py_type: type, length: int, default=None,
+                 nullable: bool=False, auto_increment: bool=False,
+                 current_timestamp: bool=False, on_update: bool=False):
+        # 字段名
+        self.name = name
+        # 数据库类型
+        self.db_type = db_type
+        # python类型
+        self.py_type = py_type
+        # 充许长度
+        self.length = length
+        # 默认值 - None表示没有默认值
+        self.default = default
+        # 可空？
+        self.nullable = nullable
+        # 自动 - 加1
+        self.auto_increment = auto_increment
+        # 自动 - 创建时间
+        self.current_timestamp = current_timestamp
+        # 自动 - 更新时间
+        self.on_update = on_update
 
-    @property
-    def type(self):
-        return self.__type__
+    def allow_insert(self):
+        """
+        允许插入的字段
+        :return:
+        """
+        return self.auto_increment is False and self.current_timestamp is False and self.on_update is False
 
-    @property
-    def length(self):
-        return self.__length__
+    def allow_update(self):
+        """
+        允许更新的字段
+        :return:
+        """
+        return self.allow_insert()
 
-    @property
-    def nullable(self):
-        return self.__nullable__
+    def equal(self, value):
+        return sql.WhereEqual(self.name, value)
 
-    @property
-    def setable(self):
-        return self.__setable__
+    def __eq__(self, other):
+        return self.equal(other)
 
-    @property
-    def default(self):
-        return self.__default__
+    def not_equal(self, value):
+        return sql.WhereNotEqual(self.name, value)
 
-    def to_sql(self):
-        items = []
-        if isinstance(self, (DataField, TimestampField)):
-            items.append('%s' % (self.type,))
-        else:
-            items.append('%s(%s)' % (self.type, self.length))
-        if self.nullable:
-            items.append('NULL')
-        else:
-            items.append('NOT NULL')
-        if self.default:
-            if isinstance(self.default, DEFAULT):
-                items.append(self.default.to_sql())
-            elif callable(self.default):
-                items.append('')
-            else:
-                items.append('\'%s\'' % self.default)
-        return ' '.join(items)
+    def __ne__(self, other):
+        return self.not_equal(other)
+
+    def less(self, value):
+        return sql.WhereLess(self.name, value)
+
+    def __lt__(self, other):
+        return self.less(other)
+
+    def less_equal(self, value):
+        return sql.WhereLessEqual(self.name, value)
+
+    def __le__(self, other):
+        return self.less_equal(other)
+
+    def greater(self, value):
+        return sql.WhereGreater(self.name, value)
+
+    def __gt__(self, other):
+        return self.greater(other)
+
+    def greater_equal(self, value):
+        return sql.WhereGreaterEqual(self.name, value)
+
+    def __ge__(self, other):
+        return self.greater_equal(other)
+
+    def in_(self, *value):
+        return sql.WhereIn(self.name, *value)
+
+    def not_in(self, *value):
+        return sql.WhereNotIn(self.name, *value)
+
+    def between(self, left, right):
+        return sql.WhereBetween(self.name, left, right)
+
+    def not_between(self, left, right):
+        return sql.WhereNotBetween(self.name, left, right)
+
+    def like(self, exp):
+        return sql.WhereLike(self.name, exp)
+
+    def not_like(self, exp):
+        return sql.WhereNotLike(self.name, exp)
+
+    def asc(self):
+        return sql.OrderAsc(self.name)
+
+    def desc(self):
+        return sql.OrderDesc(self.name)
+
+    def __str__(self):
+        return 'Field(name: %s, db_type: %s, py_type: %s, length: %s, default: %s, ' \
+               'nullable: %s, auto_increment: %s, current_timestamp: %s, on_update: %s)' % \
+                (self.name, self.db_type, self.py_type, self.length, self.default,
+                 self.nullable, self.auto_increment, self.current_timestamp, self.on_update)
 
 
 class IntField(Field):
-    def __init__(self, length=11, nullable=False, default=None):
-        super().__init__('INT', length, nullable, default)
+    def __init__(self, name: str='', length: int=11, default=None, nullable=False, auto_increment=False):
+        super().__init__(name, 'INT', int, length, default, nullable, auto_increment, False, False)
+
+
+class PrimaryKey(IntField):
+    def __init__(self, name: str=''):
+        super().__init__(name, auto_increment=True)
 
 
 class CharField(Field):
-    def __init__(self, length=50, nullable=False, default=None):
-        super().__init__('CHAR', length, nullable, default)
+    def __init__(self, name: str='', length: int=50, default=None, nullable=False):
+        super().__init__(name, 'CHAR', str, length, default, nullable, False, False, False)
 
 
 class VarcharField(Field):
-    def __init__(self, length=100, nullable=False, default=None):
-        super().__init__('VARCHAR', length, nullable, default)
+    def __init__(self, name: str='', length: int=100, default=None, nullable=False):
+        super().__init__(name, 'VARCHAR', str, length, default, nullable, False, False, False)
 
 
-class DataField(Field):
-    def __init__(self, nullable=False, default=None):
-        super().__init__('DATE', nullable=nullable, default=default)
+class TextField(Field):
+    def __init__(self, name: str='', default=None, nullable=False):
+        super().__init__(name, 'TEXT', str, 0, default, nullable, False, False, False)
+
+
+class DateField(Field):
+    def __init__(self, name: str='', default=None, nullable=False, on_update=False):
+        super().__init__(name, 'DATE', datetime.date, 0, default, nullable, False, False, on_update)
+
+
+class TimeField(Field):
+    def __init__(self, name: str='', default=None, nullable=False, on_update=False):
+            super().__init__(name, 'TIME', str, 0, default, nullable, False, False, on_update)
+
+
+class YearField(Field):
+    def __init__(self, name: str='', default=None, nullable=False, on_update=False):
+            super().__init__(name, 'YEAR', str, 0, default, nullable, False, False, on_update)
+
+
+class DatetimeField(Field):
+    def __init__(self, name: str='', default=None, nullable=False, current_timestamp=False, on_update=False):
+        super().__init__(name, 'DATETIME', str, 0, default, nullable, False, current_timestamp, on_update)
 
 
 class TimestampField(Field):
-    def __init__(self, nullable=False, default=None):
-        super().__init__('TIMESTAMP', nullable=nullable, default=default)
+    def __init__(self, name: str='', default=None, nullable=False, current_timestamp=False, on_update=False):
+        super().__init__(name, 'TIMESTAMP', datetime.datetime, 0, default, nullable, False, current_timestamp, on_update)
 
 
-class TableSetMetaclass(type):
-    def __new__(mcs, name, bases, attrs):
-        if name == 'Model':
-            return type.__new__(mcs, name, bases, attrs)
-        # set table name
-        table_name = attrs.get('__table__', name)
-        attrs['__table__'] = table_name
-
-        # set field mappings
-        mappings = dict()
-        for k, v in attrs.items():
-            if isinstance(v, Field):
-                mappings[k] = v
-        attrs['__mappings__'] = mappings
-
-        # set primary key
-        primary_key = attrs.get('__primary_key__')
-        """
-        if not primary_key or primary_key not in mappings.keys():
-            raise RuntimeError('%s primary_key not found' % name)
-        """
-        # set field order
-        field_order = attrs.get('__field_order__')
-        if not field_order:
-            field_order = [key for key in mappings.keys()]
-        for key in field_order:
-            if key not in mappings.keys():
-                field_order.remove(key)
-        for key in mappings.keys():
-            if key not in field_order:
-                field_order.append(key)
-        attrs['__field_order__'] = field_order
-
-        # delete class field
-        for k in attrs['__field_order__']:
-            attrs.pop(k)
-
-        # return class
-        return type.__new__(mcs, name, bases, attrs)
-
-
-class Model(dict, metaclass=TableSetMetaclass):
-    __table__ = ''
-    __field_order__ = []
-    __primary_key__ = 'id'
-    __mappings__ = dict()
-    __collate__ = 'utf8_general_ci'
-    __engine__ = 'InnoDB'
+class Table(collections.OrderedDict):
+    # 表名
+    __table_name__ = ''
+    # 主键
+    __table_primarykey__ = []
+    # 字段映射
+    __table_mappings__ = collections.OrderedDict()
 
     def __init__(self, **kwargs):
         super().__init__()
-        for key in self.__field_order__:
-            self[key] = kwargs.get(key)or self.get_value_default(key)
+        # 初始化字段
+        for k, v in self.__table_mappings__.items():
+            # 有指定值则使用指定值，没有则使用默认值
+            self[k] = kwargs.get(k) if k in kwargs else v.default
 
     def __setattr__(self, key, value):
         self[key] = value
 
-    def __getattr__(self, key):
-        return self[key]
+    def __getattr__(self, item):
+        return self[item]
 
     def __setitem__(self, key, value):
-        if key not in self.__mappings__.keys():
-            raise KeyError()
-        return super().__setitem__(key, value)
-
-    def get_value(self, key: str):
-        return getattr(self, key, None)
-
-    def get_value_default(self, key: str):
-        value = getattr(self, key, None)
-        if value is None:
-            field = self.__mappings__[key]
-            if not isinstance(field.default, DEFAULT) and field.default is not None:
-                value = field.default() if callable(field.default) else field.default
-                setattr(self, key, value)
-        return value
-
-    def add(self):
-        return sql.From(self.__table__).set(**self).insert()
-
-    def to_str(self):
-        fileds = []
-        for key in self.__field_order__:
-            value = self.get_value_default(key)
-            if isinstance(value, str):
-                fileds.append('\t`%s`\t=>\t"%s"' % (key, value))
-            else:
-                fileds.append('\t`%s`\t=>\t%s' % (key, value))
-        items = ['`%s`\t{' % self.__table__,
-                 '\n'.join(fileds),
-                 '}']
-        return '\n'.join(items)
-
-    @classmethod
-    def sql_create_table(cls):
-        items = ['CREATE TABLE `%s` (' % cls.__table__,
-                 ',\n'.join(['    `%s` %s' % (key, cls.__mappings__.get(key).to_sql()) for key in cls.__field_order__] +
-                            ['    PRIMARY KEY (`%s`)' % cls.__primary_key__]),
-                 ')',
-                 'COLLATE=\'%s\'' % cls.__collate__,
-                 'ENGINE=%s' % cls.__engine__]
-        return '\n'.join(items)
-
-
-def primary_key(key: str):
-    def set_key(cls):
-        cls.__primary_key__ = key
-        return cls
-    return set_key
-
-
-@primary_key('id')
-class User(Model):
-    __table__ = 'user'
-    id = IntField(default=DEFAULT.AUTO_INCREMENT)
-    name = CharField()
-    add_time = DataField(default='0000-00-00')
-    __field_order__ = ['id', 'name']
-
-
-class TableSet(object):
-    def __init__(self, model):
-        self.__model__ = model
-
-    pass
-
-
-class DbSet(db.DB):
-    user = TableSet(User)
-
-    def __init__(self, user='', passwd='', db='', host='localhost', port=3306, charset='utf-8'):
-        super().__init__(user=user, passwd=passwd, db=db, host=host, port=port, charset=charset)
-        self.__tables__ = []
+        if key in self.__table_mappings__:
+            if isinstance(value, self.__table_mappings__[key].py_type) or value is None:
+                return super().__setitem__(key, value)
+            raise TypeError('the value %s type %s not isinstance %s' % (value, type(value), self.__table_mappings__[key].py_type))
+        else:
+            raise KeyError('the key %s not in %s' % (key, self.__table_mappings__.keys()))
 
     @property
-    def tables(self):
-        return self.__tables__
+    def primarykey(self):
+        # 主键取值
+        return self[self.get_table_primarykey()]
 
-    def table_set(self, model):
-        pass
+    @primarykey.setter
+    def primarykey(self, value):
+        # 主键赋值
+        self[self.get_table_primarykey()] = value
+
+    def has_primarykey(self):
+        # 主键是否有值
+        return bool(self[self.get_table_primarykey()])
+
+    @classmethod
+    def get_table_name(cls):
+        return cls.__table_name__
+
+    @classmethod
+    def set_table_name(cls, name: str):
+        cls.__table_name__ = name
+
+    @classmethod
+    def get_table_primarykey(cls):
+        if not cls.__table_primarykey__:
+            cls.__table_primarykey__ = \
+                    [key for key, value in cls.__table_mappings__.items() if isinstance(value, PrimaryKey)]
+            if not cls.__table_primarykey__:
+                raise ValueError('not exits primary key')
+            return cls.get_table_primarykey()
+        else:
+            return cls.__table_primarykey__[0]
+
+    @classmethod
+    def set_table_primarykey(cls, *key):
+        cls.__table_primarykey__ = key
+
+    @classmethod
+    def get_table_mappings(cls):
+        return cls.__table_mappings__
+
+    @classmethod
+    def set_table_mappings(cls, mappings: collections.OrderedDict):
+        cls.__table_mappings__ = mappings
+
+    @staticmethod
+    def value_to_sql(value):
+        if value is None:
+            return 'NULL'
+        elif isinstance(value, (int, float, bool)):
+            return value.__str__()
+        else:
+            return '"%s"' % value
 
 
-@primary_key('id')
-class TestKey(object):
-    pass
+def table_name(name: str):
+    def set_name(cls: type):
+        cls.set_table_name(name)
+        return cls
+    return set_name
 
 
-if __name__ == '__main__':
-    print(User.__primary_key__)
+def table_primarykey(*key):
+    def set_primarykey(cls: type):
+        cls.set_table_primarykey(*key)
+        return cls
+    return set_primarykey
+
+
+def table_columns(*columns):
+    def set_columns(cls: type):
+        mappings = collections.OrderedDict()
+        for column in columns:
+            if column in cls.__dict__ and isinstance(cls.__dict__[column], (Field, type)):
+                if not cls.__dict__[column].name:
+                    cls.__dict__[column].name = column
+                mappings[column] = cls.__dict__[column]
+        cls.set_table_mappings(mappings)
+        return cls
+    return set_columns
+
+
+def dbset_tables(**kwargs):
+    def set_tables(cls):
+        cls.__tables__ = kwargs
+        return cls
+    return set_tables
+
+
+class ForeignKey(Field):
+    def __init__(self, name: str='', table: type=Table, default=None, nullable=False):
+        if not issubclass(table, Table):
+            raise TypeError()
+        foreign = getattr(table, table.get_table_primarykey())
+        super().__init__(name, foreign.db_type, table, foreign.length, default, nullable,
+                         foreign.auto_increment, foreign.current_timestamp, foreign.on_update)
+
+    def allow_insert(self):
+        return True
+
+    def allow_update(self):
+        return True
+
+
+class DbSet(object):
+    def __init__(self, db_obj: db.Database=None):
+        self.db = db_obj if db_obj is not None else db.Database()
+
+    def open(self):
+        self.db.open()
+        return self
+
+    def __enter__(self):
+        return self.open()
+
+    def close(self):
+        self.db.close()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.close()
+
+    def table_set(self, table):
+        if isinstance(table, type) and issubclass(table, Table):
+            return TableSet(self.db, table)
+
+    def __getattr__(self, item):
+        if item in self.__tables__:
+            return TableSet(self.db, self.__tables__[item])
+        else:
+            return super().__getattribute__(item)
+
+
+class TableSet(DbSet):
+    def __init__(self, db_obj: db.Database=None, table: type=Table):
+        super().__init__(db_obj)
+        if issubclass(table, Table):
+            self.table = table
+            self.name = table.get_table_name()
+            self.primarykey = table.get_table_primarykey()
+            self.mappings = table.get_table_mappings()
+        else:
+            raise TypeError()
+
+    def new(self, **kwargs):
+        return self.table(**kwargs)
+
+    def insert(self, obj: Table=None):
+        if not obj.has_primarykey():
+            toadd = collections.OrderedDict(
+                    [(key, obj[key]
+                     if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
+                     else obj[key].primarykey
+                     if isinstance(obj[key], Table) and obj[key].has_primarykey()
+                     else TableSet(self.db, self.mappings[key].py_type).insert(obj[key]))
+                     for key, field in self.mappings.items()
+                     if field.allow_insert() and key in obj.keys()])
+            sqlitems = ['insert into %s' % self.name,
+                        '('+','.join(toadd.keys())+')',
+                        'values ('+','.join([Table.value_to_sql(value) for value in toadd.values()])+')']
+            sql = ' '.join(sqlitems)
+            if self.db.execute(sql):
+                return self.db.insert_id()
+
+    def update(self, obj: Table):
+        if obj.has_primarykey():
+            toupdate = collections.OrderedDict(
+                    [(key, obj[key] if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
+                      else obj[key].primarykey)
+                     for key, field in self.mappings.items()
+                     if field.allow_update() and key in obj.keys()])
+            sqlitems = [
+                'update %s set ' % self.name,
+                ','.join(['%s = %s' % (key, Table.value_to_sql(value)) for key, value in toupdate.items()]),
+                'where %s = %s' % (self.primarykey, obj.primarykey)
+            ]
+            sql = ' '.join(sqlitems)
+            return self.db.execute(sql)
+
+    def delete(self, primary_key):
+        if primary_key:
+            return self.db.execute('delete from %s where %s = %s' % (self.name, self.primarykey, primary_key))
+
+    def get(self, primary_key):
+        if primary_key:
+            if self.db.execute('select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)):
+                return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                                     else TableSet(self.db, self.mappings[k].py_type).get(v)
+                                     for k, v in self.db.fetch_one().items()})
+
+    def find(self, **kwargs):
+        if kwargs:
+            if self.db.execute('select * from %s where %s' %
+                               (self.name,
+                                ' and '.join(['%s = %s' % (key, Table.value_to_sql(value)) if value is not None
+                                              else '%s IS NULL' % key
+                                              for key, value in kwargs.items()])
+                                )
+                               ):
+                return [self.table(
+                        **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                            else TableSet(self.db, self.mappings[k].py_type).get(v)
+                           for k, v in one.items()})
+                        for one in self.db.fetch_all()]
+
+    def list(self, skip=0, take=10):
+        if self.db.execute('select * from %s limit %s,%s' % (self.name, skip, take)):
+            return [self.table(
+                        **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                            else TableSet(self.db, self.mappings[k].py_type).get(v)
+                           for k, v in one.items()})
+                    for one in self.db.fetch_all()]
+
+    def count(self):
+        if self.db.execute('select count(*) as num from %s' % self.name):
+            return self.db.fetch_one()['num']
+
+    def where(self, where):
+        return QuerySet(self.db, self.table, where=where)
+
+    def order(self, order):
+        return QuerySet(self.db, self.table, order=order)
+
+    def take(self, take):
+        return QuerySet(self.db, self.table, take=take)
+
+    def skip(self, skip):
+        return QuerySet(self.db, self.table, skip=skip)
+
+
+class QuerySet(object):
+    def __init__(self, db_obj: db.Database, table: type, **kwargs):
+        self.db = db_obj
+        self.table = table
+        self.primarykey = table.get_table_primarykey()
+        self.mappings = table.get_table_mappings()
+        self.query = sql.From(table.get_table_name())
+        if 'where' in kwargs:
+            self.query.where(kwargs.get('where'))
+        if 'order' in kwargs:
+            self.query.order(kwargs.get('order'))
+        if 'take' in kwargs:
+            self.query.take(kwargs.get('take'))
+        if 'skip' in kwargs:
+            self.query.skip(kwargs.get('skip'))
+
+    def where(self, where: sql.Where):
+        self.query.where(where)
+        return self
+
+    def and_where(self, where: sql.Where):
+        self.query.and_where(where)
+        return self
+
+    def or_where(self, where: sql.Where):
+        self.query.or_where(where)
+        return self
+
+    def order(self, *order):
+        self.query.order(*order)
+        return self
+
+    def asc(self, asc: Field):
+        self.query.order_asc(asc.name)
+        return self
+
+    def desc(self, desc: Field):
+        self.query.order_desc(desc.name)
+        return self
+
+    def take(self, take: int):
+        self.query.take(take)
+        return self
+
+    def skip(self, skip: int):
+        self.query.skip(skip)
+        return self
+
+    def select(self, *select):
+        tosql = self.query.select(*[each.name for each in select if isinstance(each, Field)])
+        if self.db.execute(tosql.to_sql()):
+            if select:
+                return [
+                    {key: one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
+                     else TableSet(self.db, self.mappings[key].py_type).get(one[key])
+                     for key in self.mappings.keys() if key in one}
+                    for one in self.db.fetch_all()
+                ]
+            else:
+                return [
+                     self.table(**{key: one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
+                      else TableSet(self.db, self.mappings[key].py_type).get(one[key])
+                      for key in self.mappings.keys() if key in one})
+                      for one in self.db.fetch_all()
+                ]
+
+

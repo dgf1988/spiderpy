@@ -793,10 +793,22 @@ class WhereEqual(WhereExpression):
     def __init__(self, key: str, value):
         super().__init__(WHERE.EQUAL, Key(key), Value(value))
 
+    def to_sql(self):
+        if self.right.value is None:
+            return '%s is NULL' % self.left.to_sql()
+        else:
+            return super().to_sql()
+
 
 class WhereNotEqual(WhereExpression):
     def __init__(self, key: str, value):
         super().__init__(WHERE.NOT_EQUAL, Key(key), Value(value))
+
+    def to_sql(self):
+        if self.right.value is None:
+            return '%s is not NULL' % self.left.to_sql()
+        else:
+            return super().to_sql()
 
 
 class WhereLess(WhereExpression):
