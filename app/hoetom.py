@@ -1,9 +1,6 @@
 # -*- coding: utf-8 -*-
-from lib.url import Url
-from lib.hash import md5
 from lib.orm import *
-import os
-import string
+from lib.url import Url
 import re
 
 
@@ -24,7 +21,7 @@ class Sex(object):
 
 @table_name('country')
 @table_columns('id', 'name')
-@table_uniques('name')
+@table_uniques(name_='name')
 class Country(Table):
     id = PrimaryKey()
     name = CharField()
@@ -32,7 +29,7 @@ class Country(Table):
 
 @table_name('rank')
 @table_columns('id', 'rank')
-@table_uniques('rank')
+@table_uniques(rank_='rank')
 class Rank(Table):
     id = PrimaryKey()
     rank = CharField()
@@ -40,15 +37,15 @@ class Rank(Table):
 
 @table_name('player')
 @table_columns('id', 'hoetomid', 'p_name', 'p_sex', 'p_nat', 'p_rank', 'p_birth')
-@table_uniques('hoetomid')
+@table_uniques(hoetomid_='hoetomid', name='p_name')
 class Player(Table):
     id = PrimaryKey()
     hoetomid = IntField()
     p_name = CharField()
-    p_sex = IntField()
-    p_nat = ForeignKey(table=Country)
-    p_rank = ForeignKey(table=Rank)
-    p_birth = DateField()
+    p_sex = IntField(default=Sex.Default, nullable=True)
+    p_nat = ForeignKey(table=Country, nullable=True)
+    p_rank = ForeignKey(table=Rank, nullable=True)
+    p_birth = DateField(nullable=True)
 
     @classmethod
     def from_html(cls, html):
@@ -85,7 +82,7 @@ class Player(Table):
 
 @table_name('playerid')
 @table_columns('id', 'playerid', 'posted')
-@table_uniques('playerid')
+@table_uniques(playerid_='playerid')
 class Playerid(Table):
     id = PrimaryKey()
     playerid = IntField()
@@ -98,13 +95,13 @@ class Playerid(Table):
 @dbset_tables(player=Player, rank=Rank, country=Country, playerid=Playerid)
 class Hoetom(DbSet):
     def __init__(self):
-        super().__init__(db.Database(user='root', passwd='guofeng001', db='hoetom'))
+        super().__init__(db.Database(user='root', passwd='guofeng001', db='hoetom1'))
 
 
 if __name__ == '__main__':
     with Hoetom() as hoetom:
-        playerid = hoetom.playerid.get(300)
-        print(Rank.get_table_uniques())
-        print(Country.get_table_uniques())
-        print(Playerid.get_table_uniques())
-        print(Player.get_table_uniques())
+        print(hoetom.db.get_tables('weiqi'))
+        for table in hoetom.get_tableset():
+            print(table.create_table())
+
+
