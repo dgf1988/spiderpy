@@ -78,7 +78,7 @@ class Node(object):
         d = self.to_dict()
         for k, v in d.items():
             if isinstance(v, (list, set)):
-                d[k] = [each.get_table_sql() for each in v if isinstance(each, Node)]
+                d[k] = [each.to_sql() for each in v if isinstance(each, Node)]
             elif isinstance(v, Node):
                 d[k] = v.to_sql()
             else:
@@ -275,7 +275,7 @@ class List(Node):
         return dict(list=self.list)
 
     def to_sql(self):
-        return ','.join([each.get_table_sql() for each in self.list if isinstance(each, self.type)])
+        return ','.join([each.to_sql() for each in self.list if isinstance(each, self.type)])
 
 
 class Selection(List):

@@ -7,7 +7,7 @@ class MyTestCase(unittest.TestCase):
     def test_to_str(self):
         print(hash(None), hash(Node()), hash(object()), hash(object()), hash(''), hash(0), hash(True))
         self.assertEqual(type(Order()), Order)
-        print(WhereLessEqual('a', 1).or_by(WhereNotIn('name', '', 'abc', 1, 0, 0.0, False, None)).bracket_self().get_table_sql())
+        print(WhereLessEqual('a', 1).or_by(WhereNotIn('name', '', 'abc', 1, 0, 0.0, False, None)).bracket_self().to_sql())
         print(ValueList('a', 'b').to_str())
         node = ast.parse('(id == 6 or name=="dgf") and (date==0)')
         print(ast.dump(node))

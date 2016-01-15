@@ -1,29 +1,32 @@
 # coding: utf-8
-from lib import web
-from lib.orm import *
-from lib import hash
+from lib import db
+from lib import http
+from lib import orm
+from lib import h
 import re
 import os
 import requests
 
 
-@table_name('html')
-@table_columns('id', 'html_url', 'html_code', 'html_encoding', 'html_update')
-@table_uniques(url='html_url')
-class Html(Table):
-    id = PrimaryKey()
-    html_url = VarcharField()
-    html_code = IntField()
-    html_encoding = CharField(default='utf-8', nullable=True)
-    html_update = DatetimeField(current_timestamp=True, on_update=True)
+@orm.table_name('html')
+@orm.table_columns('id', 'html_url', 'html_code', 'html_encoding', 'html_update')
+@orm.table_uniques(url='html_url')
+class Html(orm.Table):
+    id = orm.PrimaryKey()
+    html_url = orm.VarcharField()
+    html_code = orm.IntField()
+    html_encoding = orm.CharField(default='utf-8', nullable=True)
+    html_update = orm.DatetimeField(current_timestamp=True, on_update=True)
 
     def to_page(self):
-        return Page(self['html_url'], self['html_encoding']) \
-            if self['html_encoding'] is not None else Page(self['html_url'])
+        topage = Page(self['html_url'], self['html_encoding']) \
+            if self['html_encoding'] else Page(self['html_url'])
+        topage.code = self['html_code']
+        return topage
 
 
-@dbset_tables(html=Html)
-class DbHtml(DbSet):
+@orm.dbset_tables(html=Html)
+class DbHtml(orm.DbSet):
     def __init__(self, user='root', passwd='guofeng001', database='html'):
         super().__init__(db.Database(user=user, passwd=passwd, db=database))
 
@@ -33,25 +36,32 @@ class Page(object):
 
     def __init__(self, str_url: str, encoding='utf-8'):
         self.encoding = encoding
-        self.url = web.Url(str_url).str()
-        self.urlmd5 = hash.md5(self.url)
+        self.url = str_url
+        self.urlmd5 = h.md5(self.url.encode())
         self.code = 0
         self.text = ''
 
-    def get(self, timeout=10):
+    def get(self, timeout=30):
         response = requests.get(self.url, timeout=timeout)
         response.encoding = self.encoding
         self.code, self.text = response.status_code, response.text
         return self.code
 
     def get_title(self):
-        return re.search(r'<title>(?P<title>.*?)</title>', self.text, re.IGNORECASE).group('title')
+        search = re.search(r'<title>(?P<title>.*?)</title>', self.text, re.IGNORECASE)
+        if search:
+            return search.group('title')
+        else:
+            return None
 
     def to_html(self):
         return Html(html_url=self.url, html_code=self.code, html_encoding=self.encoding)
 
+    def to_str(self):
+        return 'url=%s, code=%s, encoding=%s' % (self.url, self.code, self.encoding)
+
     def get_filepath(self):
-        url = web.Url(self.url)
+        url = http.Url(self.url)
         urlpath = url.strpath()
         urlhost = url.host
         if urlpath == '/' or urlpath == '':
@@ -79,4 +89,3 @@ class Page(object):
             return
         else:
             raise ValueError('not exists file')
-

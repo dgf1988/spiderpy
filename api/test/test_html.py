@@ -1,6 +1,6 @@
 import unittest
 from api.html import *
-from lib.web import Url
+from lib.http import Url
 from lib.sqldb import SqlDB
 from lib.hash import md5
 
@@ -16,7 +16,7 @@ class TestHtmlObject(unittest.TestCase):
     def test_(self):
         Html.Encoding = 'utf-8'
         html = Html(url='http://www.cnbeta.com/')
-        html.httpget()
+        html.get()
         if html.save():
             insertid = html.insert(self.db)
             print(insertid)

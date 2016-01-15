@@ -1,5 +1,5 @@
 import unittest
-from lib.web import Url
+from lib.http import Url
 
 
 class MyTestCase(unittest.TestCase):

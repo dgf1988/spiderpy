@@ -1,9 +1,9 @@
 # coding: utf-8
 from lib import db
 from lib import sql
-
 import collections
 import datetime
+import functools
 
 """
 
@@ -185,7 +185,8 @@ class DatetimeField(Field):
 
 class TimestampField(Field):
     def __init__(self, name: str='', default=None, nullable=False, current_timestamp=False, on_update=False):
-        super().__init__(name, 'TIMESTAMP', datetime.datetime, 0, default, nullable, False, current_timestamp, on_update)
+        super().__init__(name, 'TIMESTAMP', datetime.datetime, 0, default,
+                         nullable, False, current_timestamp, on_update)
 
 
 class Table(collections.OrderedDict):
@@ -213,7 +214,8 @@ class Table(collections.OrderedDict):
         if key in self.__table_mappings__:
             if isinstance(value, self.__table_mappings__[key].py_type) or value is None:
                 return super().__setitem__(key, value)
-            raise TypeError('the value %s type %s not isinstance %s' % (value, type(value), self.__table_mappings__[key].py_type))
+            raise TypeError('the value %s type %s not isinstance %s'
+                            % (value, type(value), self.__table_mappings__[key].py_type))
         else:
             raise KeyError('the key %s not in %s' % (key, self.__table_mappings__.keys()))
 
@@ -414,53 +416,52 @@ class TableSet(DbSet):
     def insert(self, obj: Table):
         if not obj.has_primarykey():
             toadd = collections.OrderedDict(
-                    [(key, obj[key]
-                     if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
-                     else obj[key].primarykey
-                     if isinstance(obj[key], Table) and obj[key].has_primarykey()
-                     else TableSet(self.db, self.mappings[key].py_type).insert(obj[key]))
-                     for key, field in self.mappings.items()
-                     if field.allow_insert() and key in obj.keys()])
+                    [(key, obj[key] if not isinstance(obj[key], Table) else obj[key].primarykey)
+                     for key, field in self.mappings.items() if field.allow_insert() and key in obj.keys()])
             sqlitems = ['insert into %s' % self.name,
                         '('+','.join(toadd.keys())+')',
                         'values ('+','.join([sql.Value(value).to_sql() for value in toadd.values()])+')']
-            insertsql = ' '.join(sqlitems)
-            if self.db.execute(insertsql):
+            if self.db.execute(' '.join(sqlitems)):
                 return self.db.insert_id()
 
-    def update(self, obj: Table):
-        if obj.has_primarykey():
+    def update(self, primarykey, **kwargs):
+        if primarykey:
             toupdate = collections.OrderedDict(
-                    [(key, obj[key] if not isinstance(self.mappings[key], ForeignKey) or obj[key] is None
-                      else obj[key].primarykey)
-                     for key, field in self.mappings.items()
-                     if field.allow_update() and key in obj.keys()])
-            sqlitems = [
-                'update %s set ' % self.name,
-                ','.join(['%s = %s' % (key, sql.Value(value).to_sql()) for key, value in toupdate.items()]),
-                'where %s = %s' % (self.primarykey, obj.primarykey)
-            ]
-            updatesql = ' '.join(sqlitems)
-            return self.db.execute(updatesql)
+                    [(key, kwargs[key] if not isinstance(kwargs[key], Table) else kwargs[key].primarykey)
+                     for key, field in self.mappings.items() if field.allow_update() and key in kwargs.keys()])
+            sqlitems = ['update %s set' % self.name,
+                        ','.join(['%s = %s' % (key, sql.Value(value).to_sql()) for key, value in toupdate.items()]),
+                        'where %s' % sql.WhereEqual(self.primarykey, primarykey).to_sql()]
+            return self.db.execute(' '.join(sqlitems))
 
     def delete(self, primary_key):
         if primary_key:
             return self.db.execute('delete from %s where %s = %s' % (self.name, self.primarykey, primary_key))
 
-    def get(self, primary_key):
+    def get(self, primary_key=None, **kwargs):
         if primary_key:
             if self.db.execute('select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                     for k, v in self.db.fetch_one().items()})
+                                     for k, v in self.db.fetch_all()[0].items()})
+        elif kwargs:
+            whereequals = [sql.WhereEqual(key, value if not isinstance(value, Table)
+                           else value.primarykey)
+                           for key, value in kwargs.items() if key in self.mappings.keys()]
+            whereget = whereequals[0] if len(whereequals) == 1 else functools.reduce(sql.WhereAnd, whereequals)
+            sqlget = 'select * from %s where %s' % (self.name, whereget.to_sql())
+            if self.db.execute(sqlget):
+                return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
+                                     else TableSet(self.db, self.mappings[k].py_type).get(v)
+                                     for k, v in self.db.fetch_all()[0].items()})
 
     def find(self, **kwargs):
         if kwargs:
             if self.db.execute('select * from %s where %s' %
                                (self.name,
-                                ' and '.join(['%s = %s' % (key, sql.Value(value).to_sql()) if value is not None
-                                              else '%s IS NULL' % key
-                                              for key, value in kwargs.items()])
+                                ' and '.join([sql.WhereEqual(key, value if not isinstance(value, Table)
+                                                             else value.primarykey).to_sql()
+                                              for key, value in kwargs.items() if key in self.mappings.keys()])
                                 )
                                ):
                 return [self.table(
@@ -477,9 +478,24 @@ class TableSet(DbSet):
                            for k, v in one.items()})
                     for one in self.db.fetch_all()]
 
-    def count(self):
-        if self.db.execute('select count(*) as num from %s' % self.name):
-            return self.db.fetch_one()['num']
+    def __iter__(self):
+        sqliter = 'select %s from %s order by %s' % (self.primarykey, self.name, self.primarykey)
+        if self.db.execute(sqliter):
+            toiterkeys = [each[self.primarykey] for each in self.db.fetch_all()]
+            for eachkey in toiterkeys:
+                yield self.get(eachkey)
+
+    def count(self, **kwargs):
+        sqlwhere = None
+        if kwargs:
+            whereequals = [sql.WhereEqual(key, value if not isinstance(value, Table) else value.primarykey)
+                           for key, value in kwargs.items() if key in self.mappings]
+            sqlwhere = whereequals[0] if len(whereequals) == 1 else functools.reduce(sql.WhereAnd, whereequals)
+        if sqlwhere:
+            self.db.execute('select count(*) as num from %s where %s' % (self.name, sqlwhere.to_sql()))
+        else:
+            self.db.execute('select count(*) as num from %s' % self.name)
+        return self.db.fetch_one()['num']
 
     def where(self, where):
         return QuerySet(self.db, self.table, where=where)
@@ -553,11 +569,8 @@ class QuerySet(object):
                     for one in self.db.fetch_all()
                 ]
             else:
-                return [
-                     self.table(**{key: one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
-                      else TableSet(self.db, self.mappings[key].py_type).get(one[key])
-                      for key in self.mappings.keys() if key in one})
-                      for one in self.db.fetch_all()
-                ]
-
-
+                return [self.table(
+                        **{key: one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
+                            else TableSet(self.db, self.mappings[key].py_type).get(one[key])
+                            for key in self.mappings.keys() if key in one})
+                        for one in self.db.fetch_all()]
