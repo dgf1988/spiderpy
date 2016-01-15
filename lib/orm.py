@@ -170,17 +170,17 @@ class DateField(Field):
 
 class TimeField(Field):
     def __init__(self, name: str='', default=None, nullable=False, on_update=False):
-            super().__init__(name, 'TIME', str, 0, default, nullable, False, False, on_update)
+            super().__init__(name, 'TIME', datetime.time, 0, default, nullable, False, False, on_update)
 
 
 class YearField(Field):
     def __init__(self, name: str='', default=None, nullable=False, on_update=False):
-            super().__init__(name, 'YEAR', str, 0, default, nullable, False, False, on_update)
+            super().__init__(name, 'YEAR', datetime.datetime, 0, default, nullable, False, False, on_update)
 
 
 class DatetimeField(Field):
     def __init__(self, name: str='', default=None, nullable=False, current_timestamp=False, on_update=False):
-        super().__init__(name, 'DATETIME', str, 0, default, nullable, False, current_timestamp, on_update)
+        super().__init__(name, 'DATETIME', datetime.datetime, 0, default, nullable, False, current_timestamp, on_update)
 
 
 class TimestampField(Field):
@@ -372,6 +372,14 @@ class DbSet(object):
         if isinstance(table, type) and issubclass(table, Table):
             return TableSet(self.db, table)
 
+    def create_tables(self):
+        exists = self.db.get_tables()
+        for name, table in self.get_tables().items():
+            if name in exists:
+                continue
+            TableSet(self.db, table).create_table()
+        return self.db.get_tables()
+
     def __getattr__(self, item):
         tables = self.get_tables()
         if item in tables:
@@ -380,15 +388,6 @@ class DbSet(object):
             return super().__getattribute__(item)
 
     def __iter__(self):
-        self.lenght = len(self.get_tables())
-        return self
-
-    def __next__(self):
-        if self.length <= 0:
-            raise StopIteration()
-
-
-    def get_tableset(self):
         for key, table in self.get_tables().items():
             yield TableSet(self.db, table)
 
@@ -408,12 +407,9 @@ class TableSet(DbSet):
         else:
             raise TypeError()
 
-    def new(self, **kwargs):
-        return self.table(**kwargs)
-
-    def create_table(self):
-        return self.table.get_table_sql()
-        # return self.db.execute(self.table.get_table_sql())
+    def create_table(self, if_not_exist=True):
+        self.db.execute(self.table.get_table_sql())
+        return self.db.get_tables()
 
     def insert(self, obj: Table):
         if not obj.has_primarykey():
@@ -473,7 +469,7 @@ class TableSet(DbSet):
                            for k, v in one.items()})
                         for one in self.db.fetch_all()]
 
-    def list(self, skip=0, take=10):
+    def list(self, take=10, skip=0):
         if self.db.execute('select * from %s limit %s,%s' % (self.name, skip, take)):
             return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None

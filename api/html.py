@@ -1,4 +1,4 @@
-from lib.url import Url
+from lib.web import Url
 from lib.hash import md5
 import os
 

@@ -1,7 +1,7 @@
 # -*- conding: utf-8 -*-
 import unittest
 from app.hoetom import *
-from lib.url import Url
+from lib.web import Url
 from lib.hash import md5
 
 

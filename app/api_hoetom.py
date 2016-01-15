@@ -1,5 +1,5 @@
 
-from lib.url import Url
+from lib.web import Url
 import re
 
 

@@ -1,6 +1,6 @@
 import unittest
 from api.html import *
-from lib.url import Url
+from lib.web import Url
 from lib.sqldb import SqlDB
 from lib.hash import md5
 
