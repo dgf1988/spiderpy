@@ -560,12 +560,12 @@ class QuerySet(object):
 
     def select(self, *select):
         tosql = self.query.select(*[each.name for each in select if isinstance(each, Field)])
-        if self.db.execute(tosql.get_table_sql()):
+        if self.db.execute(tosql.to_sql()):
             if select:
-                return [
-                    {key: one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
-                     else TableSet(self.db, self.mappings[key].py_type).get(one[key])
-                     for key in self.mappings.keys() if key in one}
+                return [collections.OrderedDict(
+                     [(key, one[key] if one[key] is None or not isinstance(self.mappings[key], ForeignKey)
+                      else TableSet(self.db, self.mappings[key].py_type).get(one[key]))
+                      for key in self.mappings.keys() if key in one])
                     for one in self.db.fetch_all()
                 ]
             else:

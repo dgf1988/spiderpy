@@ -136,6 +136,15 @@ class PlayerIndexUrlList(object):
 
 if __name__ == '__main__':
     dbhtml = web.DbHtml().open()
-    dbHoetom = DbHoetom().open()
+    dbhoetom = DbHoetom().open()
+
+    for playerid in dbhoetom.playerid:
+        playerpage = HoetomPage(playerid.to_url())
+        playerpage.get()
+        playerpage.save()
+        print(playerid['playerid'], '=>', playerpage.get_title())
+
+    dbhtml.close()
+    dbhoetom.close()
 
     pass
