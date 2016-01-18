@@ -1,15 +1,26 @@
 # -*- coding: utf-8 -*-
 import datetime
 import re
-
-from api import web
-from lib import orm
+import api.html
+import lib.orm
+import lib.db
 
 
 class Sex(object):
     Default = 0
     Boy = 1
     Girl = 2
+
+    def __init__(self, sex):
+        self.sex = None
+        if isinstance(sex, str):
+            self.sex = self.from_str(sex)
+        if isinstance(sex, int):
+            if sex in (1, 2):
+                self.sex = sex
+
+    def to_str(self):
+        return '男' if self.sex == self.Boy else '女'
 
     @staticmethod
     def from_str(sex: str):
@@ -21,45 +32,45 @@ class Sex(object):
         return Sex.Default
 
 
-@orm.table_name('country')
-@orm.table_columns('id', 'name')
-@orm.table_uniques(name_='name')
-class Country(orm.Table):
-    id = orm.PrimaryKey()
-    name = orm.CharField()
+@lib.orm.table_name('country')
+@lib.orm.table_columns('id', 'name')
+@lib.orm.table_uniques(name_='name')
+class Country(lib.orm.Table):
+    id = lib.orm.PrimaryKey()
+    name = lib.orm.CharField()
 
 
-@orm.table_name('rank')
-@orm.table_columns('id', 'rank')
-@orm.table_uniques(rank_='rank')
-class Rank(orm.Table):
-    id = orm.PrimaryKey()
-    rank = orm.CharField()
+@lib.orm.table_name('rank')
+@lib.orm.table_columns('id', 'rank')
+@lib.orm.table_uniques(rank_='rank')
+class Rank(lib.orm.Table):
+    id = lib.orm.PrimaryKey()
+    rank = lib.orm.CharField()
 
 
-@orm.table_name('playerid')
-@orm.table_columns('id', 'playerid', 'posted')
-@orm.table_uniques(playerid_='playerid')
-class Playerid(orm.Table):
-    id = orm.PrimaryKey()
-    playerid = orm.IntField()
-    posted = orm.TimestampField(current_timestamp=True)
+@lib.orm.table_name('playerid')
+@lib.orm.table_columns('id', 'playerid', 'posted')
+@lib.orm.table_uniques(playerid_='playerid')
+class Playerid(lib.orm.Table):
+    id = lib.orm.PrimaryKey()
+    playerid = lib.orm.IntField()
+    posted = lib.orm.TimestampField(current_timestamp=True)
 
     def to_url(self):
         return 'http://www.hoetom.com/playerinfor_2011.jsp?id=%s' % self['playerid']
 
 
-@orm.table_name('player')
-@orm.table_columns('id', 'p_id', 'p_name', 'p_sex', 'p_nat', 'p_rank', 'p_birth')
-@orm.table_uniques(playerid='p_id')
-class Player(orm.Table):
-    id = orm.PrimaryKey()
-    p_id = orm.ForeignKey(table=Playerid)
-    p_name = orm.CharField()
-    p_sex = orm.IntField(default=Sex.Default, nullable=True)
-    p_nat = orm.ForeignKey(table=Country, nullable=True)
-    p_rank = orm.ForeignKey(table=Rank, nullable=True)
-    p_birth = orm.DateField(nullable=True)
+@lib.orm.table_name('player')
+@lib.orm.table_columns('id', 'p_id', 'p_name', 'p_sex', 'p_nat', 'p_rank', 'p_birth')
+@lib.orm.table_uniques(playerid='p_id')
+class Player(lib.orm.Table):
+    id = lib.orm.PrimaryKey()
+    p_id = lib.orm.ForeignKey(table=Playerid)
+    p_name = lib.orm.CharField()
+    p_sex = lib.orm.IntField(default=Sex.Default, nullable=True)
+    p_nat = lib.orm.ForeignKey(table=Country, nullable=True)
+    p_rank = lib.orm.ForeignKey(table=Rank, nullable=True)
+    p_birth = lib.orm.DateField(nullable=True)
 
     @classmethod
     def from_html(cls, str_html: str):
@@ -94,13 +105,13 @@ class Player(orm.Table):
                    p_birth=datetime.datetime.strptime(birth, '%Y-%m-%d').date() if birth else None)
 
 
-@orm.dbset_tables(player=Player, rank=Rank, country=Country, playerid=Playerid)
-class DbHoetom(orm.DbSet):
+@lib.orm.dbset_tables(player=Player, rank=Rank, country=Country, playerid=Playerid)
+class Db(lib.orm.DbSet):
     def __init__(self):
-        super().__init__(orm.db.Database(user='root', passwd='guofeng001', db='hoetom'))
+        super().__init__(lib.db.Database(user='root', passwd='guofeng001', db='hoetom'))
 
 
-class HoetomPage(web.Page):
+class Page(api.html.Page):
     def __init__(self, url: str):
         super().__init__(url, encoding='GB18030')
 
@@ -135,14 +146,11 @@ class PlayerIndexUrlList(object):
 
 
 if __name__ == '__main__':
-    dbhtml = web.DbHtml().open()
-    dbhoetom = DbHoetom().open()
+    dbhtml = api.html.Db().open()
+    dbhoetom = Db().open()
 
-    for playerid in dbhoetom.playerid:
-        playerpage = HoetomPage(playerid.to_url())
-        playerpage.get()
-        playerpage.save()
-        print(playerid['playerid'], '=>', playerpage.get_title())
+    print('html=', dbhtml.html.count())
+    print('player=', dbhoetom.player.count())
 
     dbhtml.close()
     dbhoetom.close()

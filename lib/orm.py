@@ -1,6 +1,6 @@
 # coding: utf-8
-from lib import db
-from lib import sql
+import lib.db 
+import lib.sql
 import collections
 import datetime
 import functools
@@ -54,7 +54,7 @@ class Field(object):
             if self.on_update:
                 items.append('ON UPDATE CURRENT_TIMESTAMP')
         elif not (not self.nullable and self.default is None):
-            items.append('DEFAULT %s' % sql.Value(self.default).to_sql())
+            items.append('DEFAULT %s' % lib.sql.Value(self.default).to_sql())
         return ' '.join(items)
 
     def allow_insert(self):
@@ -72,64 +72,64 @@ class Field(object):
         return self.allow_insert()
 
     def equal(self, value):
-        return sql.WhereEqual(self.name, value)
+        return lib.sql.WhereEqual(self.name, value)
 
     def __eq__(self, other):
         return self.equal(other)
 
     def not_equal(self, value):
-        return sql.WhereNotEqual(self.name, value)
+        return lib.sql.WhereNotEqual(self.name, value)
 
     def __ne__(self, other):
         return self.not_equal(other)
 
     def less(self, value):
-        return sql.WhereLess(self.name, value)
+        return lib.sql.WhereLess(self.name, value)
 
     def __lt__(self, other):
         return self.less(other)
 
     def less_equal(self, value):
-        return sql.WhereLessEqual(self.name, value)
+        return lib.sql.WhereLessEqual(self.name, value)
 
     def __le__(self, other):
         return self.less_equal(other)
 
     def greater(self, value):
-        return sql.WhereGreater(self.name, value)
+        return lib.sql.WhereGreater(self.name, value)
 
     def __gt__(self, other):
         return self.greater(other)
 
     def greater_equal(self, value):
-        return sql.WhereGreaterEqual(self.name, value)
+        return lib.sql.WhereGreaterEqual(self.name, value)
 
     def __ge__(self, other):
         return self.greater_equal(other)
 
     def in_(self, *value):
-        return sql.WhereIn(self.name, *value)
+        return lib.sql.WhereIn(self.name, *value)
 
     def not_in(self, *value):
-        return sql.WhereNotIn(self.name, *value)
+        return lib.sql.WhereNotIn(self.name, *value)
 
     def between(self, left, right):
-        return sql.WhereBetween(self.name, left, right)
+        return lib.sql.WhereBetween(self.name, left, right)
 
     def not_between(self, left, right):
-        return sql.WhereNotBetween(self.name, left, right)
+        return lib.sql.WhereNotBetween(self.name, left, right)
 
     def like(self, exp):
-        return sql.WhereLike(self.name, exp)
+        return lib.sql.WhereLike(self.name, exp)
 
     def not_like(self, exp):
-        return sql.WhereNotLike(self.name, exp)
+        return lib.sql.WhereNotLike(self.name, exp)
 
     def asc(self):
-        return sql.OrderAsc(self.name)
+        return lib.sql.OrderAsc(self.name)
 
     def desc(self):
-        return sql.OrderDesc(self.name)
+        return lib.sql.OrderDesc(self.name)
 
     def __str__(self):
         return 'Field(name: %s, db_type: %s, py_type: %s, length: %s, default: %s, ' \
@@ -296,7 +296,7 @@ class Table(collections.OrderedDict):
 
 
 class ForeignKey(Field):
-    def __init__(self, name: str='', table: type=Table, default=None, nullable=False):
+    def __init__(self, name: str='', table=Table, default=None, nullable=False):
         if not issubclass(table, Table):
             raise TypeError()
         foreign = getattr(table, table.get_table_primarykey())
@@ -311,21 +311,21 @@ class ForeignKey(Field):
 
 
 def table_name(name: str):
-    def set_name(cls: type):
+    def set_name(cls):
         cls.set_table_name(name)
         return cls
     return set_name
 
 
 def table_primarykey(*key):
-    def set_primarykey(cls: type):
+    def set_primarykey(cls):
         cls.set_table_primarykey(*key)
         return cls
     return set_primarykey
 
 
 def table_columns(*columns):
-    def set_columns(cls: type):
+    def set_columns(cls):
         mappings = collections.OrderedDict()
         for column in columns:
             if column in cls.__dict__ and isinstance(cls.__dict__[column], (Field, type)):
@@ -338,7 +338,7 @@ def table_columns(*columns):
 
 
 def table_uniques(**kwargs):
-    def set_uniques(cls: type):
+    def set_uniques(cls):
         cls.set_table_uniques(**kwargs)
         return cls
     return set_uniques
@@ -354,8 +354,8 @@ def dbset_tables(**kwargs):
 class DbSet(object):
     __tables__ = dict()
 
-    def __init__(self, db_obj: db.Database=None):
-        self.db = db_obj if db_obj is not None else db.Database()
+    def __init__(self, db_obj: lib.db.Database=None):
+        self.db = db_obj if db_obj is not None else lib.db.Database()
 
     def open(self):
         self.db.open()
@@ -399,17 +399,14 @@ class DbSet(object):
 
 
 class TableSet(DbSet):
-    def __init__(self, db_obj: db.Database=None, table: type=Table):
+    def __init__(self, db_obj: lib.db.Database=None, table=Table):
         super().__init__(db_obj)
-        if issubclass(table, Table):
-            self.table = table
-            self.name = table.get_table_name()
-            self.primarykey = table.get_table_primarykey()
-            self.mappings = table.get_table_mappings()
-        else:
-            raise TypeError()
+        self.table = table
+        self.name = table.get_table_name()
+        self.primarykey = table.get_table_primarykey()
+        self.mappings = table.get_table_mappings()
 
-    def create_table(self, if_not_exist=True):
+    def create_table(self):
         self.db.execute(self.table.get_table_sql())
         return self.db.get_tables()
 
@@ -420,7 +417,7 @@ class TableSet(DbSet):
                      for key, field in self.mappings.items() if field.allow_insert() and key in obj.keys()])
             sqlitems = ['insert into %s' % self.name,
                         '('+','.join(toadd.keys())+')',
-                        'values ('+','.join([sql.Value(value).to_sql() for value in toadd.values()])+')']
+                        'values ('+','.join([lib.sql.Value(value).to_sql() for value in toadd.values()])+')']
             if self.db.execute(' '.join(sqlitems)):
                 return self.db.insert_id()
 
@@ -430,8 +427,8 @@ class TableSet(DbSet):
                     [(key, kwargs[key] if not isinstance(kwargs[key], Table) else kwargs[key].primarykey)
                      for key, field in self.mappings.items() if field.allow_update() and key in kwargs.keys()])
             sqlitems = ['update %s set' % self.name,
-                        ','.join(['%s = %s' % (key, sql.Value(value).to_sql()) for key, value in toupdate.items()]),
-                        'where %s' % sql.WhereEqual(self.primarykey, primarykey).to_sql()]
+                        ','.join(['%s = %s' % (key, lib.sql.Value(value).to_sql()) for key, value in toupdate.items()]),
+                        'where %s' % lib.sql.WhereEqual(self.primarykey, primarykey).to_sql()]
             return self.db.execute(' '.join(sqlitems))
 
     def delete(self, primary_key):
@@ -445,10 +442,10 @@ class TableSet(DbSet):
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
                                      for k, v in self.db.fetch_all()[0].items()})
         elif kwargs:
-            whereequals = [sql.WhereEqual(key, value if not isinstance(value, Table)
+            whereequals = [lib.sql.WhereEqual(key, value if not isinstance(value, Table)
                            else value.primarykey)
                            for key, value in kwargs.items() if key in self.mappings.keys()]
-            whereget = whereequals[0] if len(whereequals) == 1 else functools.reduce(sql.WhereAnd, whereequals)
+            whereget = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.WhereAnd, whereequals)
             sqlget = 'select * from %s where %s' % (self.name, whereget.to_sql())
             if self.db.execute(sqlget):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
@@ -459,8 +456,8 @@ class TableSet(DbSet):
         if kwargs:
             if self.db.execute('select * from %s where %s' %
                                (self.name,
-                                ' and '.join([sql.WhereEqual(key, value if not isinstance(value, Table)
-                                                             else value.primarykey).to_sql()
+                                ' and '.join([lib.sql.WhereEqual(key, value if not isinstance(value, Table)
+                                              else value.primarykey).to_sql()
                                               for key, value in kwargs.items() if key in self.mappings.keys()])
                                 )
                                ):
@@ -488,9 +485,9 @@ class TableSet(DbSet):
     def count(self, **kwargs):
         sqlwhere = None
         if kwargs:
-            whereequals = [sql.WhereEqual(key, value if not isinstance(value, Table) else value.primarykey)
+            whereequals = [lib.sql.WhereEqual(key, value if not isinstance(value, Table) else value.primarykey)
                            for key, value in kwargs.items() if key in self.mappings]
-            sqlwhere = whereequals[0] if len(whereequals) == 1 else functools.reduce(sql.WhereAnd, whereequals)
+            sqlwhere = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.WhereAnd, whereequals)
         if sqlwhere:
             self.db.execute('select count(*) as num from %s where %s' % (self.name, sqlwhere.to_sql()))
         else:
@@ -511,12 +508,12 @@ class TableSet(DbSet):
 
 
 class QuerySet(object):
-    def __init__(self, db_obj: db.Database, table: type, **kwargs):
+    def __init__(self, db_obj: lib.db.Database, table=Table, **kwargs):
         self.db = db_obj
         self.table = table
         self.primarykey = table.get_table_primarykey()
         self.mappings = table.get_table_mappings()
-        self.query = sql.From(table.get_table_name())
+        self.query = lib.sql.From(table.get_table_name())
         if 'where' in kwargs:
             self.query.where(kwargs.get('where'))
         if 'order' in kwargs:
@@ -526,15 +523,15 @@ class QuerySet(object):
         if 'skip' in kwargs:
             self.query.skip(kwargs.get('skip'))
 
-    def where(self, where: sql.Where):
+    def where(self, where: lib.sql.Where):
         self.query.where(where)
         return self
 
-    def and_where(self, where: sql.Where):
+    def and_where(self, where: lib.sql.Where):
         self.query.and_where(where)
         return self
 
-    def or_where(self, where: sql.Where):
+    def or_where(self, where: lib.sql.Where):
         self.query.or_where(where)
         return self
 

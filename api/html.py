@@ -1,22 +1,22 @@
 # coding: utf-8
-from lib import db
-from lib import http
-from lib import orm
-from lib import h
 import re
 import os
 import requests
+import lib.url
+import lib.hash
+import lib.orm
+import lib.db
 
 
-@orm.table_name('html')
-@orm.table_columns('id', 'html_url', 'html_code', 'html_encoding', 'html_update')
-@orm.table_uniques(url='html_url')
-class Html(orm.Table):
-    id = orm.PrimaryKey()
-    html_url = orm.VarcharField()
-    html_code = orm.IntField()
-    html_encoding = orm.CharField(default='utf-8', nullable=True)
-    html_update = orm.DatetimeField(current_timestamp=True, on_update=True)
+@lib.orm.table_name('html')
+@lib.orm.table_columns('id', 'html_url', 'html_code', 'html_encoding', 'html_update')
+@lib.orm.table_uniques(url='html_url')
+class Html(lib.orm.Table):
+    id = lib.orm.PrimaryKey()
+    html_url = lib.orm.VarcharField()
+    html_code = lib.orm.IntField()
+    html_encoding = lib.orm.CharField(default='utf-8', nullable=True)
+    html_update = lib.orm.DatetimeField(current_timestamp=True, on_update=True)
 
     def to_page(self):
         topage = Page(self['html_url'], self['html_encoding']) \
@@ -25,10 +25,10 @@ class Html(orm.Table):
         return topage
 
 
-@orm.dbset_tables(html=Html)
-class DbHtml(orm.DbSet):
+@lib.orm.dbset_tables(html=Html)
+class Db(lib.orm.DbSet):
     def __init__(self, user='root', passwd='guofeng001', database='html'):
-        super().__init__(db.Database(user=user, passwd=passwd, db=database))
+        super().__init__(lib.db.Database(user=user, passwd=passwd, db=database))
 
 
 class Page(object):
@@ -37,7 +37,7 @@ class Page(object):
     def __init__(self, str_url: str, encoding='utf-8'):
         self.encoding = encoding
         self.url = str_url
-        self.urlmd5 = h.md5(self.url.encode())
+        self.urlmd5 = lib.hash.md5(self.url.encode())
         self.code = 0
         self.text = ''
 
@@ -61,7 +61,7 @@ class Page(object):
         return 'url=%s, code=%s, encoding=%s' % (self.url, self.code, self.encoding)
 
     def get_filepath(self):
-        url = http.Url(self.url)
+        url = lib.url.Url(self.url)
         urlpath = url.strpath()
         urlhost = url.host
         if urlpath == '/' or urlpath == '':
@@ -86,6 +86,18 @@ class Page(object):
         if os.path.exists(path) and os.path.isfile(loadname):
             with open(loadname, 'r', encoding=self.encoding) as fload:
                 self.text = fload.read()
-            return
+            return True
         else:
-            raise ValueError('not exists file')
+            return False
+
+
+if __name__ == '__main__':
+    dbhtml = Db().open()
+
+    list_html = dbhtml.html.list(10, 2000)
+    list_page = [html.to_page() for html in list_html]
+    list_title = [page.get_title() for page in list_page if page.load()]
+    for title in list_title:
+        print(title)
+
+    dbhtml.close()

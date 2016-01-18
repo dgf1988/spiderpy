@@ -176,3 +176,11 @@ class Url(object):
         if parseurl.query:
             dicturl['query'] = {item[0]: item[1] for item in urllib.parse.parse_qsl(parseurl.query, 1)}
         return dicturl
+
+
+def parse(str_url: str):
+    return Url.parse(str_url)
+
+
+def get(str_url: str, charset='utf-8', timeout=100):
+    return Url(str_url).get(charset=charset, timeout=timeout)

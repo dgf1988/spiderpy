@@ -607,10 +607,10 @@ class WHERE(enum.Enum):
 
 
 class Where(Node):
-    def __init__(self, type: WHERE=WHERE.NULL, left_child: Node=Node(), right_child: Node=Node()):
+    def __init__(self, where_type: WHERE=WHERE.NULL, left_child: Node=Node(), right_child: Node=Node()):
         self.__left__ = left_child
         self.__right__ = right_child
-        self.__type__ = type
+        self.__type__ = where_type
 
     @property
     def left(self):
@@ -687,7 +687,7 @@ class WhereNull(Where):
 
 class WhereTrue(Where):
     def __init__(self):
-        super().__init__(type=WHERE.TRUE)
+        super().__init__(where_type=WHERE.TRUE)
 
     def is_true(self):
         return True
@@ -701,14 +701,14 @@ class WhereTrue(Where):
 
 class WhereStr(Where):
     def __init__(self, str_where: str):
-        super().__init__(type=WHERE.STR, left_child=Str(str_where))
+        super().__init__(where_type=WHERE.STR, left_child=Str(str_where))
 
     def is_true(self):
         return self.left.is_true()
 
     def is_equal(self, other):
         if isinstance(other, WhereStr):
-            return self.left.str == other.left.str
+            return self.left.is_equal(other.left)
         return super().is_equal(other)
 
     def to_dict(self):
@@ -720,7 +720,7 @@ class WhereStr(Where):
 
 class WhereBracket(Where):
     def __init__(self, where_node: Where=Where()):
-        super().__init__(type=WHERE.BRACKET, left_child=where_node)
+        super().__init__(where_type=WHERE.BRACKET, left_child=where_node)
 
     def is_true(self):
         return self.left.is_true()
@@ -738,8 +738,8 @@ class WhereBracket(Where):
 
 
 class WhereNode(Where):
-    def __init__(self, type: WHERE=WHERE.AND, left: Node=Node(), right: Node=Node()):
-        super().__init__(type=type, left_child=left, right_child=right)
+    def __init__(self, where_type: WHERE=WHERE.AND, left: Node=Node(), right: Node=Node()):
+        super().__init__(where_type=where_type, left_child=left, right_child=right)
 
     def is_true(self):
         return (self.left.is_true() or self.right.is_true()) and self.type.is_true()
@@ -763,17 +763,17 @@ class WhereNode(Where):
 
 class WhereAnd(WhereNode):
     def __init__(self, left: Node=Node(), right: Node=Node()):
-        super().__init__(type=WHERE.AND, left=left, right=right)
+        super().__init__(where_type=WHERE.AND, left=left, right=right)
 
 
 class WhereOr(WhereNode):
     def __init__(self, left: Node=Node(), right: Node=Node()):
-        super().__init__(type=WHERE.OR, left=left, right=right)
+        super().__init__(where_type=WHERE.OR, left=left, right=right)
 
 
 class WhereExpression(Where):
-    def __init__(self, type=WHERE.EQUAL, left: Key=Key(), right: Node=Value()):
-        super().__init__(type, left, right)
+    def __init__(self, where_type=WHERE.EQUAL, left: Key=Key(), right: Node=Value()):
+        super().__init__(where_type, left, right)
 
     def is_true(self):
         return self.left.is_true() and self.type.is_true()
@@ -794,7 +794,7 @@ class WhereEqual(WhereExpression):
         super().__init__(WHERE.EQUAL, Key(key), Value(value))
 
     def to_sql(self):
-        if self.right.value is None:
+        if getattr(self.right, 'value') is None:
             return '%s is NULL' % self.left.to_sql()
         else:
             return super().to_sql()
@@ -805,7 +805,7 @@ class WhereNotEqual(WhereExpression):
         super().__init__(WHERE.NOT_EQUAL, Key(key), Value(value))
 
     def to_sql(self):
-        if self.right.value is None:
+        if getattr(self.right, 'value') is None:
             return '%s is not NULL' % self.left.to_sql()
         else:
             return super().to_sql()
@@ -876,7 +876,8 @@ class METHOD(enum.Enum):
     __str_update__ = 'update'
     __str_select__ = 'select'
 
-    def is_true(self):
+    @staticmethod
+    def is_true():
         return True
 
     def is_equal(self, other):

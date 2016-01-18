@@ -79,3 +79,7 @@ class Database(object):
             db_name = self.name
         self.execute('show tables from %s' % db_name)
         return [table['Tables_in_%s' % db_name] for table in self.fetch_all()]
+
+
+def open_mysql(**kwargs):
+    return Database(**kwargs).open()
