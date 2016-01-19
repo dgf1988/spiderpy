@@ -72,6 +72,13 @@ class Player(lib.orm.Table):
     p_rank = lib.orm.ForeignKey(table=Rank, nullable=True)
     p_birth = lib.orm.DateField(nullable=True)
 
+    def to_str(self):
+        return '姓名：%s，性别：%s，国籍：%s，段位：%s，生日：%s' % \
+               (self['p_name'], Sex(self['p_sex']).to_str(),
+                self['p_nat']['name'] if self['p_nat'] else None,
+                self['p_rank']['rank'] if self['p_rank'] else None,
+                self['p_birth'])
+
     @classmethod
     def from_html(cls, str_html: str):
         m_player = re.search(r'href="\?id=(?P<id>\d+)&refresh=y">(?P<name>[^<]+)', str_html, re.IGNORECASE)

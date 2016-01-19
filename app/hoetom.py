@@ -3,25 +3,22 @@ import api.hoetom as hoetom
 import lib.web as web
 
 
-@web.get('/player')
-def player():
-    return 'player is work!'
+router = web.Router()
+server = web.Server(router)
 
 
-@web.controller('player', 1000, hoetom.Db())
+@router.add('player')
 class Player(web.Controller):
-    def __init__(self, uid, db):
-        self.uid = uid
-        self.db = db
 
-    def get(self):
-        return ('player get %s' % self.uid).encode()
+    @web.action(accept=[web.HTTP.GET], args=[('playerid', int)])
+    def default(self, playerid):
+        db = hoetom.Db().open()
+        player = db.player.get(int(playerid))
+        db.close()
+        self.response_header.add('Content-type', 'text/html')
+        return player.to_str()
 
 
 if __name__ == '__main__':
-    # web.server(port=8080).run()
-    h = web.Header(('User-Agent', 'my py web F'),
-                   ('Content-type', 'text/html; charset=utf-8'),
-                   ('Cookie', 'PHP=lskdjflskdlf', 'PHPSESSID=el4bk1s9v2si1o4i4i6j3jn7e2'))
-    print(h.to_str())
+    server.run()
 
