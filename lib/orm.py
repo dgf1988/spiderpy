@@ -468,7 +468,7 @@ class TableSet(DbSet):
                         for one in self.db.fetch_all()]
 
     def list(self, take=10, skip=0):
-        if self.db.execute('select * from %s limit %s,%s' % (self.name, skip, take)):
+        if self.db.execute('select * from %s order by %s limit %s,%s' % (self.name, self.primarykey, skip, take)):
             return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)

@@ -1,4 +1,9 @@
+import wsgiref.util
 import wsgiref.simple_server
+import wsgiref.headers
+import wsgiref.handlers
+import logging
+import functools
 import tenjin
 import urllib.parse
 import collections
@@ -67,7 +72,10 @@ class Status(object):
         return '%s %s' % (self.code, self.msg)
 
 
-class HTTP(enum.Enum):
+class METHOD(enum.Enum):
+    """
+        HTTP 方法 - 枚举
+    """
     GET = 1
     POST = 2
 
@@ -84,16 +92,75 @@ class HTTP(enum.Enum):
         return cls.GET
 
 
+class Header(dict):
+    """
+        HTTP 头
+    """
+
+    def __init__(self, *args):
+        """
+            Header(('User-Agent', 'web/2.0'),('Content-type', 'text/plain'))
+        :param args:
+        :return:
+        """
+        super().__init__()
+        for arg in args:
+            if isinstance(arg, (tuple, list)) and len(arg) >= 2:
+                self[arg[0]] = list(arg[1:])
+
+    def iter_items(self):
+        for key, values in self.items():
+            if not isinstance(values, list):
+                values = [values]
+            for value in values:
+                yield key, value
+
+    def iter_line(self):
+        for key, value in self.iter_items():
+            yield '%s: %s\r\n' % (key, value)
+        yield '\r\n'
+
+    def to_list(self):
+        return list(self.iter_items())
+
+    def to_str(self):
+        return ''.join(list(self.iter_line()))
+
+    def add(self, key, *values):
+        if key not in self:
+            self[key] = []
+        add_values = [value for value in values if value not in self[key]]
+        self[key].extend(add_values)
+
+    def set(self, key, *values):
+        self[key] = list(values)
+
+    @property
+    def content_type(self):
+        return self['Content-type']
+
+    @content_type.setter
+    def content_type(self, value):
+        self['Content-type'] = value if isinstance(value, list) else [value]
+
+
 class Environ(object):
     """
-        HTTP请求环境
+        HTTP请求环境 - 对environ进行包装
     """
 
     def __init__(self, environ: dict):
+        """
+
+        :param environ: 由WSGI服务器提供
+        :return:
+        """
         self.environ = environ
+        self.url = urllib.parse.unquote(wsgiref.util.request_uri(self.environ))
 
     @property
     def addr(self):
+        # 访问者IP地址
         return self.environ['REMOTE_ADDR']
 
     @property
@@ -166,183 +233,224 @@ class Environ(object):
         yield '\r\n'
 
 
-class Header(dict):
-    """
-        HTTP 头
-    """
-
-    def __init__(self, *args):
-        super().__init__()
-        for arg in args:
-            if isinstance(arg, tuple) and len(arg) > 1:
-                self.add(arg[0], list(arg[1:]))
-
-    def iter_items(self):
-        for key, values in dict.items(self):
-            if not isinstance(values, list):
-                values = [values]
-            for value in values:
-                yield (key, value)
-
-    def iter_line(self):
-        for key, value in self.iter_items():
-            yield '%s: %s\r\n' % (key, value)
-        yield '\r\n'
-
-    def to_list(self):
-        return list(self.iter_items())
-
-    def to_str(self):
-        return ''.join(list(self.iter_line()))
-
-    def add(self, key, value):
-        if isinstance(value, list):
-            for v in value:
-                self.add(key, v)
-        elif key in self:
-            if isinstance(self[key], list):
-                self[key].append(value)
-            else:
-                self[key] = [self[key], value]
-        else:
-            self[key] = [value]
-
-
 class Request(object):
     """
         HTTP 请求
     """
 
-    def __init__(self, environ, start_response):
+    def __init__(self, environ):
         self.environ = Environ(environ)
-        self.start_response = start_response if callable(start_response) else None
-        if not self.start_response:
-            raise ValueError('starta_response is not callable or is None')
-        self.url = self.environ.get_url()
-        self.method = HTTP.from_str(self.environ.method)
+        self.url = self.environ.url
+        self.method = METHOD.from_str(self.environ.method)
 
     def get_header(self):
         return Header()
+
+
+class Response(object):
+    """
+        HTTP 响应
+    """
+    def __init__(self, code: int=200, header: Header=None, buffer: bytes=None):
+        self.code = code
+        self.header = header or Header()
+        self.buffer = buffer or bytes()
+
+    def __call__(self, start_response):
+        if not callable(start_response):
+            raise ValueError('start_response "%s" is not callable' % start_response)
+        start_response(Status(self.code).to_str(), self.header.to_list())
+        return self
+
+    def __iter__(self):
+        yield self.buffer
+
+    def code(self, code: int):
+        self.code = code
+        return self
+
+
+class NotFountResponse(Response):
+    def __init__(self):
+        super().__init__(404, Header(['content-type', 'text/plain']), Status(404).to_str().encode())
 
 
 class Route(object):
     """
         线路
     """
-    def __init__(self, key_name: str, call_action):
-        if not callable(call_action):
-            raise ValueError('call action "%s" is not callable' % call_action.__name__)
-        if not isinstance(call_action, type) or not issubclass(call_action, Controller):
-            raise ValueError('call action "%s" is not controller type' % call_action.__name__)
-        self.action = call_action
+    def __init__(self, name_controller: str, cls_controller):
+        if not isinstance(cls_controller, type) or not issubclass(cls_controller, Controller):
+            raise ValueError('%s is not controller' % cls_controller)
+        self.controller = cls_controller
 
-        key_name = key_name or self.action.__name__
-        if not key_name:
-            raise ValueError('route key name is empty')
-        self.name = key_name
+        self.name = name_controller or cls_controller.__name__
+        if not self.name:
+            raise ValueError('route name is empty')
 
-    def is_controller(self):
-        return isinstance(self.action, type) and issubclass(self.action, Controller)
-
-    def is_callable(self):
-        return callable(self.action)
+    def __bool__(self):
+        return isinstance(self.controller, type) and issubclass(self.controller, Controller)
 
     def __call__(self, *args, **kwargs):
-        return self.action(*args, **kwargs)
+        return self.controller(*args, **kwargs) if self else None
+
+    def __iter__(self):
+        yield self.name
+        yield self.controller
 
 
 class Router(collections.OrderedDict):
     """
         路由器
     """
-    def __init__(self, *routes):
+    def __init__(self, host: str, *routes):
         super().__init__()
+        self.host = host
         self.default_route = None
         for route in routes:
             if isinstance(route, Route):
                 self[route.name] = route
 
-    @property
-    def default(self):
-        return self.default_route
-
-    @default.setter
-    def default(self, route: Route):
-        self.default_route = route
-
     def iter_items(self):
         for route in self.values():
             yield route
-        yield self.default
+        if isinstance(self.default, Route):
+            yield self.default
 
-    def add(self, name: str=None):
-        def add_route(call_action):
-            route = Route(name or call_action.__name__, call_action)
+    # 装饰器 - 设置默认控制器
+    def default(self, cls_controller):
+        self.default_route = Route('', cls_controller)
+        return cls_controller
+
+    # 装饰器 - 添加控制器
+    def controller(self, name: str=None):
+        def add_controller(cls_controller):
+            route = Route(name, cls_controller)
             self[route.name] = route
-            return call_action
-        return add_route
+            return cls_controller
+        return add_controller
 
-    def get_routing(self, request: Request):
-        return Routing(request, self)
+    def routing_controller_by_url(self, url: str):
+        """
+            路由解析
+        :param url: 请求链接
+        :return: 路线，参数表， 参数字典
+        """
+        if not url:
+            return None, [], dict()
 
-    def __call__(self, request: Request):
-        return self.get_routing(request)
+        # 请求链接解析
+        logging.info('url = "%s"' % url)
+        parse_url = urllib.parse.urlparse(url)
+        if parse_url.hostname != self.host:
+            return None, [], dict()
+        list_path = [each for each in parse_url.path.split('/') if each]
+        logging.info('list path = "%s"' % list_path)
+        len_path = len(list_path)
 
+        # 路由分发
+        route_name = list_path[0] if len_path > 0 else None
+        route = self[route_name] \
+            if route_name and route_name in self and isinstance(self[route_name], Route) else None
+        route_name = route_name if route else None
+        route = route or self.default_route
 
-class Routing(object):
-    """
-        映射
-    """
-    def __init__(self, request: Request, router: Router):
-        self.request = request
-        
-        url = self.request.environ.get_url()
-        self.url = urllib.parse.urlparse(url)
-        
-        split_path = [each for each in self.url.path.split('/') if each]
-        split_len = len(split_path)
-        self.name = split_path[0] if split_len > 0 \
-            else None
-        self.args = split_path[1:] if split_len > 1 \
-            else []
-        self.query = urllib.parse.parse_qs(self.url.query) if self.url.query \
-            else dict()
-        self.route = router.get(self.name) if self.name \
-            else router.default if isinstance(router.default, Route) \
-            else None
+        # 路由参数
+        route_args = list_path if not route_name else list_path[1:] if len_path > 1 else []
+        route_kwargs = {key: value for key, value in urllib.parse.parse_qsl(parse_url.query)} \
+            if parse_url.query else dict()
 
-    def __call__(self, *args, **kwargs):
-        return self.route(self.name, self.request, *self.args, **self.query)
+        # 返回 - 路由，参数表，参数字典
+        return route, route_args, route_kwargs
 
-    def __bool__(self):
-        return self.route is not None and isinstance(self.route, Route)
+    def __call__(self, url: str):
+        return self.routing_controller_by_url(url)
 
 
 class Action(object):
     """
         处理器
     """
-    def __init__(self, name: str, accept: list, call_action, args: list):
-        self.name = name or call_action.__name__
-        self.accept = accept or []
-        self.action = call_action
-        self.args = collections.OrderedDict()
-        if args:
-            for arg in args:
-                self.args[arg[0]] = arg[1]
+    def __init__(self, action_call, accept_method: list, *accept_args, **accept_kwargs):
+        self.action_call = action_call if callable(action_call) else None
 
-    def __call__(self, controller, *args, **kwargs):
-        if controller.method not in self.accept:
+        self.accept_method = accept_method or []
+        self.accept_args = accept_args
+        self.accept_kwargs = accept_kwargs
+
+    def __bool__(self):
+        return self.action_call is not None and callable(self.action_call)
+
+    def __call__(self, controller, *args, **kwargs) -> Response:
+        """
+            执行 - 执行控制器的处理函数
+        :param controller: 控制器实例
+        :param args: 执行的列表参数
+        :param kwargs: 执行的字典参数
+        :return: 返回控制器的响应
+        """
+        # 执行函数验证
+        if not self:
+            logging.warning('action %s is not callable' % controller.action_name)
             return None
-        r_buffer = self.action(controller, *args, **kwargs)
-        return Response(controller.response_code, controller.response_header, controller.request.start_response,
-                        r_buffer)
+        # 控制器实例验证
+        if not isinstance(controller, Controller):
+            logging.warning('%s is not controller instance' % controller)
+            return None
+        # 请求方法验证
+        if controller.request.method not in self.accept_method:
+            logging.warning('action %s http method %s is not in action accept method %s' %
+                            (controller.action_name, controller.request.method, self.accept_method))
+            return None
+        # 请求参数验证
+        action_args = []
+        action_kwargs = dict()
+        len_args = len(args)
+        # 参数长度验证
+        if len_args > len(self.accept_args) or len(kwargs) > len(self.accept_kwargs):
+            logging.warning('len args %s or len kwargs %s is more then accept len args %s or kwargs %s' %
+                            (len_args, len(kwargs), len(self.accept_args), len(self.accept_kwargs)))
+            return None
+        # 遍历验证和构建执行参数
+        for i, accept_type in enumerate(self.accept_args):
+            # 索引的参数不存在，使用None作默认值
+            if i >= len_args:
+                action_args.append(None)
+                continue
+            arg = args[i]
+            # 如果验证不通过，返回None
+            if accept_type is int and not arg.isnumeric():
+                logging.warning('arg %s type is not accept type %s' % (arg, int))
+                return None
+            action_args.append(accept_type(arg))
+
+        for key, accept_type in self.accept_kwargs.items():
+            if key not in kwargs:
+                action_kwargs[key] = None
+                continue
+            value = kwargs[key]
+            if accept_type is int and not value.isnumeric():
+                logging.warning('value %s type is not accept type %s' % (value, int))
+                return None
+            action_kwargs[key] = accept_type(value)
+
+        # 执行控制器的处理函数，并返回控制器或执行函数的响应
+        action_response = self.action_call(controller, *action_args, **action_kwargs)
+        if isinstance(action_response, Response):
+            return action_response
+        else:
+            return controller.response
 
 
 # 处理器装饰
-def action(name: str=None, accept: list=None, args: list=None):
+def action(accept_method: list, *accept_args, **accept_kwargs):
+    # check accept type
+    for accept_type in list(accept_args) + list(accept_kwargs.values()):
+        if not isinstance(accept_type, type):
+            raise ValueError('accept type %s must be type instance' % accept_type)
+
     def set_action(func):
-        return Action(name or func.__name__, accept, func, args)
+        return Action(func, accept_method, *accept_args, **accept_kwargs)
     return set_action
 
 
@@ -351,70 +459,63 @@ class Controller(object):
         控制器 - 处理器任务分发
     """
 
-    def __init__(self, name_controller=None, request: Request=None, name_action=None, *args, **kwargs):
-        self.name = name_controller
-        name_action = name_action or 'default'
-
+    def __init__(self, request: Request, *args, **kwargs):
         self.request = request
-        self.method = self.request.method
-        self.response_code = 200
-        self.response_header = self.request.get_header()
+        self.response = Response()
 
-        self.action = self.get_action(name_action) or self.default
-        self.args = args
-        self.kwargs = kwargs
+        # 请求分发
+        len_args = len(args)
+        self.action_name = args[0] if len_args > 0 else None
+        self.action = getattr(self, self.action_name) \
+            if self.action_name and hasattr(self, self.action_name) and isinstance(getattr(self, self.action_name), Action) \
+            else None
+        self.action_name = self.action_name if self.action else None
+        self.action = self.action or self.default
+
+        # 参数构建
+        self.action_args = args if not self.action_name else args[1:] if len_args > 1 else []
+        self.action_kwargs = kwargs
 
     def __bool__(self):
-        return self.action is not None and callable(self.action) and isinstance(self.action, Action)
+        return isinstance(self.action, Action)
 
-    def __call__(self, *args, **kwargs):
-        return self.action(self, *self.args, **self.kwargs)
+    def __call__(self) ->Response:
+        return self.action(self, *self.action_args, **self.action_kwargs) if self else None
 
-    def get_action(self, name_action: str):
-        if hasattr(self, name_action):
-            get_action = getattr(self, name_action)
-            if isinstance(get_action, Action):
-                return get_action
-
-    @action(accept=[HTTP.GET, HTTP.POST])
+    @action(accept_method=[METHOD.GET, METHOD.POST])
     def default(self, *args, **kwargs):
-        self.response_header.add('Content-type', 'text/plain')
-        return '%s default %s %s' % (self.name, self.method.to_str(), self.request.url)
-
-
-class Response(object):
-    """
-        HTTP 响应
-    """
-    def __init__(self, code: int, header: Header, start_response, buffer=None):
-        self.status = Status(code)
-        self.header = header
-        self.start_response = start_response if callable(start_response) else None
-
-        self.buffer = buffer if not isinstance(buffer, str) or buffer is None else buffer.encode()
-
-    def __iter__(self):
-        self.start_response(self.status.to_str(), self.header.to_list())
-        yield self.buffer
+        self.response.header.add('Content-type', 'text/html')
+        body_items = [
+            'url=%s' % self.request.url,
+            'host=%s' % self.request.environ.host,
+            'method=%s' % self.request.method,
+        ]
+        body = '<br/>'.join(body_items)
+        self.response.buffer = body.encode()
 
 
 class Server(object):
-    def __init__(self, router: Router, host='localhost', port=5000):
+    def __init__(self, router: Router):
+        # 路由器
         self.router = router
-        self.host = host
-        self.port = port
 
     def __call__(self, environ, start_response):
-        request = Request(environ, start_response)
-        routing = self.router(request)
-        if routing:
-            controller = routing()
+        # 请求
+        request = Request(environ)
+        # 路由， 列表参数， 字典参数
+        route, args, kwargs = self.router(request.url)
+        if route:
+            # 路由成功后，通过路由生成控制器实例
+            controller = route(request, *args, **kwargs)
             if controller:
-                return controller()
-        else:
-            request.start_response(Status(404).to_str(), Header(('Content-type', 'text/plain')).to_list())
-            return ['{msg}'.format(msg=Status(404).to_str()).encode()]
+                # 控制器生成成功后， 由控制器响应请求
+                response = controller()
+                if response:
+                    # 发送响应，并返回响应实例
+                    return response(start_response)
+        # 返回 404错误 响应
+        return NotFountResponse()(start_response)
 
-    def run(self):
-        wsgiref.simple_server.make_server(self.host, self.port, self).serve_forever()
+    def listen(self, port=8080):
+        wsgiref.simple_server.make_server(self.router.host, port, self).serve_forever()
 
