@@ -1,4 +1,5 @@
 # coding=utf-8
+import enum
 """
     SqlObject To Sql
 
@@ -10,7 +11,6 @@
     by: dgf1988
     email: dgf1988@qq.com
 """
-import enum
 
 
 class Node(object):
@@ -1136,7 +1136,8 @@ class From(object):
         return Update(self.node.get('table'), self.node.get('where'), **self.node.get('sets'))
 
 if __name__ == '__main__':
-    print(From('html').where('id=4', name='dgf').order('id', dict(name='desc'), dict(age='asc')).take(10).select('id').to_sql())
+    print(From('html').where('id=4', name='dgf').order('id', dict(name='desc'), dict(age='asc')).take(10)
+          .select('id').to_sql())
     print(From('user').set(name=None, birth='00000').where(id=4).update().to_sql())
     s = Sets(id=9, name=10)
     print(s.to_sql())
@@ -1144,4 +1145,3 @@ if __name__ == '__main__':
     print(s.to_sql())
     s.pop('name')
     print(s.to_sql())
-

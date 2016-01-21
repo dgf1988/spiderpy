@@ -1,21 +1,25 @@
 # coding: utf-8
-import api.hoetom as hoetom
-import lib.web as web
 import logging
-import wsgiref.headers
+
+import api.hoetom as hoetom
+
+import lib.controller
+import lib.router
+import lib.server
+import lib.http
 
 
 logging.basicConfig(level=logging.INFO)
 
 
-router = web.Router(host='localhost')
-server = web.Server(router)
+router = lib.router.Router(host='localhost')
+server = lib.server.Server(router)
 
 
 @router.default
-class Player(web.Controller):
+class Player(lib.controller.Controller):
 
-    @web.action([web.METHOD.GET], int)
+    @lib.controller.action([lib.http.METHOD.GET], int)
     def default(self, playerid: int):
         list_player = []
         player = dict()
@@ -31,25 +35,25 @@ class Player(web.Controller):
         elif player:
             self.response.buffer = player.to_str().encode()
 
-    @web.action([web.METHOD.GET], str)
+    @lib.controller.action([lib.http.METHOD.GET], str)
     def name(self, player_name: str):
         logging.info('player name = "%s"' % player_name)
         if not player_name:
-            return web.NotFountResponse()
+            return lib.http.NotFountResponse()
         db = hoetom.Db().open()
         player = db.player.get(p_name=player_name)
         db.close()
 
         if not player:
-            return web.NotFountResponse()
+            return lib.http.NotFountResponse()
         self.response.header.set('Content-type', 'text/html')
         self.response.buffer = player.to_str().encode()
 
 
-@router.controller('country')
-class Country(web.Controller):
-    @web.action([web.METHOD.GET], int)
-    def default(self, natid=None):
+@router.add('country')
+class Country(lib.controller.Controller):
+    @lib.controller.action([lib.http.METHOD.GET], int)
+    def list(self, natid=None):
         list_country = []
         country = dict()
         db = hoetom.Db().open()
@@ -59,10 +63,12 @@ class Country(web.Controller):
             list_country = db.country.list(100)
         db.close()
 
-        self.response.header.set('content-type', 'text/html')
+        self.response.header.content_type = 'text/html; charset=utf-8'
         if list_country:
-            self.response.buffer = '<br/>'.join(['%s %s' % (country['id'], country['name']) for country in list_country]).encode()
+            self.response.buffer = \
+                '<br/>'.join(['%s %s' % (country['id'], country['name']) for country in list_country]).encode()
         elif country:
+            print(country)
             self.response.buffer = ('%s %s' % (country['id'], country['name'])).encode()
 
 
