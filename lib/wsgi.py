@@ -1,6 +1,6 @@
 # coding: utf-8
-import urllib.parse
 import wsgiref.util
+import urllib.parse
 
 
 class Environ(object):

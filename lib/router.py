@@ -66,7 +66,7 @@ class Router(collections.OrderedDict):
             return call
         return add_route
 
-    def routing_controller_by_url(self, url: str):
+    def routing(self, url: str):
         """
             路由解析
         :param url: 请求链接
@@ -98,4 +98,4 @@ class Router(collections.OrderedDict):
         return route, route_args, route_kwargs
 
     def __call__(self, url: str):
-        return self.routing_controller_by_url(url)
+        return self.routing(url)

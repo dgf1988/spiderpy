@@ -73,4 +73,10 @@ class Country(lib.controller.Controller):
 
 
 if __name__ == '__main__':
-    server.listen(5000)
+    import wsgiref.simple_server
+    import wsgiref.util
+    import wsgiref.headers
+
+    header = wsgiref.headers.Headers([('User-agent', 'web.py/2.0'), ('User-agent', 'web.py/3.0')])
+    header.add_header('content-type', 'text/html', charset='utf-8')
+    print(header)
