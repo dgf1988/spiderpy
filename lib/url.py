@@ -1,186 +1,124 @@
 # -*- coding: utf-8 -*-
-import re
-import requests
 import urllib.parse
-import hashlib
+
+__all__ = ['parse', 'Url']
 
 
 class Url(object):
-    AcceptProtocol = ('http', 'https')
-    Http = 'http'
-    Https = 'https'
-
-    def __init__(self, strurl='', protocol='http', host='', port=80, path='/', query=None):
-        if not query:
-            query = {}
-        self.__protocol = 'http'
-        self.__port = 80
-        self.__host = ''
-        self.__path = '/'
-        self.__query = {}
-        if isinstance(strurl, str) and strurl:
-            urldict = self.parse(strurl)
-            if 'protocol' in urldict and urldict['protocol']:
-                protocol = urldict['protocol']
-            if 'host' in urldict and urldict['host']:
-                host = urldict['host']
-            if 'port' in urldict and urldict['port']:
-                port = urldict['port']
-            if 'path' in urldict and urldict['path'] and urldict['path'] is not '/':
-                path = urldict['path']
-            if 'query' in urldict and urldict['query']:
-                query.update(**urldict['query'])
-        self.protocol = protocol
-        self.host = host
-        self.port = port
-        self.path = path
-        for k, v in query.items():
-            if not isinstance(v, str):
-                query[k] = str(v)
-        self.query = query
-        pass
+    def __init__(self, url: str, default_scheme='', default_hostname='', default_port=0):
+        url = url or '/'
+        self._parse = urllib.parse.urlparse(url, default_scheme)
+        self._default_scheme = default_scheme
+        self._default_hostname = default_hostname
+        self._default_port = default_port
 
     @property
-    def protocol(self):
-        return self.__protocol
-
-    @protocol.setter
-    def protocol(self, protocol):
-        if not isinstance(protocol, str):
-            raise ValueError
-        protocol = protocol.lower()
-        if protocol not in self.AcceptProtocol:
-            raise ValueError
-        self.__protocol = protocol
-
-    def strprotocol(self):
-        if self.host and self.protocol:
-            return self.protocol + ':'
-        return ''
-
-    @property
-    def port(self):
-        return self.__port
-
-    @port.setter
-    def port(self, port):
-        if not isinstance(port, int) or port <= 0:
-            raise ValueError
-        self.__port = port
-
-    def strport(self):
-        if self.port != 80 and self.host:
-            return ':%s' % self.port
-        return ''
+    def scheme(self):
+        return self._parse.scheme or self._default_scheme or None
 
     @property
     def host(self):
-        return self.__host
+        return self._parse.netloc or None
 
-    @host.setter
-    def host(self, host):
-        if not isinstance(host, str):
-            raise ValueError
-        self.__host = host
+    @property
+    def hostname(self):
+        return self._parse.hostname or self._default_hostname or None
 
-    def strhost(self):
-        if self.host:
-            return '//%s' % self.host
-        else:
-            return ''
+    @property
+    def port(self):
+        scheme = self.scheme or ''
+        port = self._parse.port or self._default_port
+        if scheme == 'http':
+            return port or 80
+        elif scheme == 'https':
+            return port or 443
+        elif scheme == 'ftp':
+            return port or 21
+        return port or None
 
     @property
     def path(self):
-        return self.__path
+        return self._parse.path or None
 
-    @path.setter
-    def path(self, path):
-        if not isinstance(path, str):
-            raise ValueError
-        self.__path = path.strip()
-
-    def strpath(self):
-        pathspilt = re.match(r'^/.*', self.path)
-        if pathspilt:
-            return '%s' % self.path
-        else:
-            return '/%s' % self.path
+    @property
+    def params(self):
+        return self._parse.params or None
 
     @property
     def query(self):
-        return self.__query
+        return self._parse.query or None
 
-    @query.setter
-    def query(self, query):
-        if not query:
-            self.__query = {}
-        else:
-            self.__query = query
+    def dict_query(self):
+        return urllib.parse.parse_qs(self._parse.query)
 
-    def strquery(self):
-        if self.query:
-            return '?%s' % urllib.parse.urlencode(self.query)
-        else:
-            return ''
+    def list_query(self):
+        return urllib.parse.parse_qsl(self._parse.query)
 
-    def strsrc(self):
-        return self.strpath() + self.strquery()
+    @property
+    def fragment(self):
+        return self._parse.fragment or None
 
-    def str(self):
-        return self.strprotocol() + self.strhost() + self.strport() + self.strsrc()
+    @property
+    def username(self):
+        return self._parse.username or None
 
-    def dict(self):
+    @property
+    def password(self):
+        return self._parse.password or None
+
+    def items(self):
+        yield 'scheme', self.scheme
+        yield 'hostname', self.hostname
+        yield 'port', self.port
+        yield 'path', self.path
+        yield 'params', self.params
+        yield 'query', self.query
+        yield 'fragment', self.fragment
+
+    def to_dict(self):
         return dict(
-            protocol=self.protocol,
-            host=self.host,
+            scheme=self.scheme,
+            hostname=self.hostname,
             port=self.port,
             path=self.path,
-            query=self.query
+            params=self.params,
+            query=self.query,
+            fragment=self.fragment
         )
 
-    def md5(self):
-        m = hashlib.md5()
-        m.update(self.str().encode())
-        return m.hexdigest()
+    def to_str(self):
+        str_url = [self.scheme or self._default_scheme]
+        if self.scheme or self._default_scheme:
+            str_url.append(':')
+        if not self.hostname:
+            str_url.clear()
+        else:
+            str_url.append('//%s' % self.hostname)
+            if self.scheme == 'http' and self.port and self.port != 80:
+                str_url.append(':%s' % self.port)
+        if not self.path.startswith('/'):
+            str_url.append('/')
+        str_url.append(self.path)
+        if self.path and self.params:
+            str_url.append(';%s' % self.params)
+        if self.query:
+            str_url.append('?%s' % self.query)
+        if self.fragment:
+            str_url.append('#%s' % self.fragment)
+        return ''.join(str_url)
 
-    def get(self, charset='utf-8', timeout=100):
-        response = requests.get(self.str(), timeout=timeout)
-        response.encoding = charset
-        return response.status_code, response.text
+    def is_equal(self, other):
+        return self.to_dict() == other.to_dict() if isinstance(other, Url) else str(self) == str(other)
+
+    def __iter__(self):
+        return self.items()
 
     def __str__(self):
-        return self.str()
+        return self.to_str()
 
-    def __hash__(self):
-        return hash(self.str())
-
-    def __eq__(self, other):
-        if isinstance(other, Url):
-            return self.dict() == other.dict()
-        return self.str() == str(other)
-
-    @staticmethod
-    def parse(url):
-        if not isinstance(url, str):
-            raise ValueError
-        dicturl = {}
-        parseurl = urllib.parse.urlparse(url)
-        if parseurl.scheme:
-            dicturl['protocol'] = parseurl.scheme
-        if parseurl.hostname:
-            dicturl['host'] = parseurl.hostname
-        if parseurl.port:
-            dicturl['port'] = parseurl.port
-        if parseurl.path:
-            dicturl['path'] = parseurl.path
-        if parseurl.query:
-            dicturl['query'] = {item[0]: item[1] for item in urllib.parse.parse_qsl(parseurl.query, 1)}
-        return dicturl
+    def __repr__(self):
+        return '<%s: %s>' % (self.__class__.__name__, self.to_str())
 
 
-def parse(str_url: str):
-    return Url.parse(str_url)
-
-
-def get(str_url: str, charset='utf-8', timeout=100):
-    return Url(str_url).get(charset=charset, timeout=timeout)
+def parse(url: str, default_scheme='', default_hostname='', default_port=0) -> Url:
+    return Url(url, default_scheme, default_hostname, default_port)

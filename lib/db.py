@@ -81,5 +81,5 @@ class Database(object):
         return [table['Tables_in_%s' % db_name] for table in self.fetch_all()]
 
 
-def open_mysql(**kwargs):
+def connect(**kwargs):
     return Database(**kwargs).open()
