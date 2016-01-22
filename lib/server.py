@@ -14,7 +14,7 @@ class Server(object):
         # 请求
         request = lib.http.Request(environ)
         # 路由， 列表参数， 字典参数
-        route, args, kwargs = self.router(request.url)
+        route, args, kwargs = self.router(request.url_parse)
         if route:
             # 路由成功后，通过路由生成控制器实例
             controller = route(request, *args, **kwargs)

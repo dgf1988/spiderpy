@@ -61,7 +61,7 @@ class Page(object):
         return 'url=%s, code=%s, encoding=%s' % (self.url, self.code, self.encoding)
 
     def get_filepath(self):
-        url = lib.url.Url(self.url)
+        url = lib.url.UrlParse(self.url)
         urlpath = url.strpath()
         urlhost = url.host
         if urlpath == '/' or urlpath == '':

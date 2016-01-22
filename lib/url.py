@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 import urllib.parse
 
-__all__ = ['parse', 'Url']
+__all__ = ['parse', 'UrlParse']
 
 
-class Url(object):
+class UrlParse(object):
     def __init__(self, url: str, default_scheme='', default_hostname='', default_port=0):
         url = url or '/'
         self._parse = urllib.parse.urlparse(url, default_scheme)
@@ -75,7 +75,7 @@ class Url(object):
         yield 'query', self.query
         yield 'fragment', self.fragment
 
-    def to_dict(self):
+    def dict_url(self):
         return dict(
             scheme=self.scheme,
             hostname=self.hostname,
@@ -86,7 +86,7 @@ class Url(object):
             fragment=self.fragment
         )
 
-    def to_str(self):
+    def str_url(self):
         str_url = [self.scheme or self._default_scheme]
         if self.scheme or self._default_scheme:
             str_url.append(':')
@@ -108,17 +108,17 @@ class Url(object):
         return ''.join(str_url)
 
     def is_equal(self, other):
-        return self.to_dict() == other.to_dict() if isinstance(other, Url) else str(self) == str(other)
+        return self.dict_url() == other.dict_url() if isinstance(other, UrlParse) else str(self) == str(other)
 
     def __iter__(self):
         return self.items()
 
     def __str__(self):
-        return self.to_str()
+        return self.str_url()
 
     def __repr__(self):
-        return '<%s: %s>' % (self.__class__.__name__, self.to_str())
+        return '<%s: %s>' % (self.__class__.__name__, self.str_url())
 
 
-def parse(url: str, default_scheme='', default_hostname='', default_port=0) -> Url:
-    return Url(url, default_scheme, default_hostname, default_port)
+def parse(url: str, default_scheme='', default_hostname='', default_port=0) -> UrlParse:
+    return UrlParse(url, default_scheme, default_hostname, default_port)

@@ -104,7 +104,7 @@ class Environ(object):
         :return:
         """
         self.environ = environ
-        self.url = lib.url.parse(urllib.parse.unquote(wsgiref.util.request_uri(self.environ)))
+        self.url_parse = lib.url.parse(urllib.parse.unquote(wsgiref.util.request_uri(self.environ)))
 
     @property
     def os(self):
@@ -209,7 +209,7 @@ class Environ(object):
     def request_items(self):
         yield 'Protocol', self.request_protocol
         yield 'Method', self.request_method
-        yield 'Url', self.url.to_str()
+        yield 'Url', self.url_parse.str_url()
         for k, v in self.request_headers().items():
             yield k, v
 
@@ -221,7 +221,7 @@ class Request(object):
 
     def __init__(self, environ):
         self.environ = Environ(environ)
-        self.url = self.environ.url
+        self.url_parse = self.environ.url_parse
         self.method = METHOD.from_str(self.environ.request_method)
         self.protocol = self.environ.request_protocol
         self.headers = self.environ.request_headers()
@@ -230,7 +230,7 @@ class Request(object):
         return self.headers.is_true() and bool(self.protocol) and self.method
 
     def __repr__(self):
-        return '<%s: %s %s %s>' % (self.__class__.__name__, self.method, self.url.to_str(), self.protocol)
+        return '<%s: %s %s %s>' % (self.__class__.__name__, self.method, self.url_parse.str_url(), self.protocol)
 
 
 class Response(object):

@@ -7,6 +7,7 @@ import lib.controller
 import lib.router
 import lib.server
 import lib.http
+from lib.headers import *
 
 
 logging.basicConfig(level=logging.INFO)
@@ -31,7 +32,7 @@ class Player(lib.controller.Controller):
         db.close()
         self.response.header.set('Content-type', 'text/html')
         if list_player:
-            self.response.buffer = '<br/>'.join([player.to_str() for player in list_player]).encode()
+            self.response.buffer = '<br/>'.join([player.str_url() for player in list_player]).encode()
         elif player:
             self.response.buffer = player.to_str().encode()
 
@@ -47,7 +48,7 @@ class Player(lib.controller.Controller):
         if not player:
             return lib.http.NotFountResponse()
         self.response.header.set('Content-type', 'text/html')
-        self.response.buffer = player.to_str().encode()
+        self.response.buffer = player.str_url().encode()
 
 
 @router.add('country')
@@ -73,10 +74,20 @@ class Country(lib.controller.Controller):
 
 
 if __name__ == '__main__':
+    import urllib.parse
+    import lib.headers
+    import lib.http
+    import lib.wsgi
     import wsgiref.simple_server
-    import wsgiref.util
-    import wsgiref.headers
 
-    header = wsgiref.headers.Headers([('User-agent', 'web.py/2.0'), ('User-agent', 'web.py/3.0')])
-    header.add_header('content-type', 'text/html', charset='utf-8')
-    print(header)
+    def app(environ, start_response):
+        env = lib.http.Environ(environ)
+        start_response(lib.http.Status(200).to_str(), lib.headers.Headers(('Content-type', 'text/html;charset=utf-8')).to_list())
+        for k, v in env.request_items():
+            yield '<p><b>{key}:</b> {value}</p>\r\n'.format(key=k, value=v).encode()
+        yield '<p>=========================================================================================</p>'.encode()
+        for k, v in env.items():
+            yield '<p><b>{key}:</b> {value}</p>\r\n'.format(key=k, value=v).encode()
+
+    server = wsgiref.simple_server.make_server('localhost', 8080, app)
+    server.serve_forever()

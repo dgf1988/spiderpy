@@ -120,7 +120,7 @@ class Controller(object):
     def default(self, *args, **kwargs):
         self.response.header.add('Content-type', 'text/html')
         body_items = [
-            'url=%s' % self.request.url,
+            'url=%s' % self.request.url_parse,
             'host=%s' % self.request.environ.host,
             'method=%s' % self.request.method,
         ]
