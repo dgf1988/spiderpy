@@ -237,7 +237,7 @@ class TestWhere(unittest.TestCase):
         self.assertNotEqual(node_2, Where())
         self.assertEqual(node_2.to_dict(), dict(type=WHERE.AND, left=WhereTrue(), right=Node()))
         self.assertEqual(node_2.to_sql(), '1')
-        node_2.__type__ = WHERE.NULL
+        node_2._operation = WHERE.NULL
         self.assertFalse(node_2)
 
         node_3 = WhereNode(left=WhereNull())
@@ -259,14 +259,14 @@ class TestWhere(unittest.TestCase):
         a_2 = WhereAnd(WhereNull(), WhereTrue())
         self.assertTrue(a_2)
         self.assertEqual(a_2, '1')
-        self.assertEqual(a_2.to_dict(), dict(type=a_2.type, left=a_2.left, right=a_2.right))
+        self.assertEqual(a_2.to_dict(), dict(type=a_2.operation, left=a_2.left, right=a_2.right))
         self.assertEqual(a_2.to_sql(), '1')
 
         a_3 = WhereAnd(WhereStr('a=1'), WhereTrue())
         self.assertTrue(a_3)
         self.assertEqual(a_3, 'a=1 and 1')
         self.assertEqual(a_3, WhereNode(WHERE.AND, WhereStr('a=1'), WhereTrue()))
-        self.assertEqual(a_3.to_dict(), dict(type=a_3.type, left=a_3.left, right=a_3.right))
+        self.assertEqual(a_3.to_dict(), dict(type=a_3.operation, left=a_3.left, right=a_3.right))
         self.assertEqual(a_3.to_sql(), 'a=1 and 1')
 
         self.assertNotEqual(a_1, a_2)
