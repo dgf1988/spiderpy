@@ -137,3 +137,18 @@ class UrlParse(object):
 
 def parse(url: str, default_scheme='', default_hostname='', default_port=0) -> UrlParse:
     return UrlParse(url, default_scheme, default_hostname, default_port)
+
+
+class UrlBuilder(object):
+    def __init__(self, scheme='', username='', password='', hostname='', port=0, path='', params='', query='', fragment=''):
+        pass
+
+    def is_true(self):
+        pass
+
+    def is_equal(self, other):
+        pass
+
+    def to_str(self):
+        pass
+
