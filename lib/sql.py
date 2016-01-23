@@ -130,8 +130,6 @@ class Key(Str):
 
 class Value(Node):
     def __init__(self, value=None):
-        if isinstance(value, Node):
-            raise ValueError('the value type (%s) must be python type' % type(value))
         self._value = value
 
     @property
