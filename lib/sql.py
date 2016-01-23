@@ -26,7 +26,7 @@ class Node(object):
         用以支持集合和字典
         :return:
         """
-        return super().__hash__()
+        return hash(self.to_sql())
 
     def __hash__(self):
         return self.hash()
@@ -50,7 +50,7 @@ class Node(object):
         if isinstance(other, Node):
             return self.to_sql() == other.to_sql()
         if isinstance(other, str):
-            return self.to_sql() == other.__str__()
+            return self.to_sql() == other
         return False
 
     def __eq__(self, other):
@@ -70,22 +70,6 @@ class Node(object):
         """
         return ''
 
-    def to_str(self) -> str:
-        """
-        输出节点的字符串
-        :return:
-        """
-        d = self.to_dict()
-        for k, v in d.items():
-            if isinstance(v, (list, set)):
-                d[k] = [each.to_sql() for each in v if isinstance(each, Node)]
-            elif isinstance(v, Node):
-                d[k] = v.to_sql()
-            else:
-                d[k] = str(v)
-        return str(d)
-
-    # for debug
     def __str__(self):
         return '<Sql: %s>' % (self.to_sql())
 
@@ -94,12 +78,16 @@ class Node(object):
 
 
 class Str(Node):
-    def __init__(self, raw_str: str):
-        self._str = raw_str
+    def __init__(self, str_arg: str):
+        self._str = str_arg
 
     @property
     def str(self):
         return self._str
+
+    @str.setter
+    def str(self, str_arg: str):
+        self._str = str_arg
 
     def hash(self):
         return hash(self.str)
@@ -108,11 +96,7 @@ class Str(Node):
         return bool(self.str)
 
     def is_equal(self, other):
-        if isinstance(other, Str):
-            return self.str == other.str
-        if isinstance(other, str):
-            return self.str == other
-        return super().is_equal(other)
+        return self.str == other.str if isinstance(other, Str) else super().is_equal(other)
 
     def to_dict(self):
         return dict(str=self.str)
@@ -121,39 +105,42 @@ class Str(Node):
         return self.str
 
 
-class Key(Node):
+class Key(Str):
     def __init__(self, key: str):
-        self._key = key
+        if not key:
+            raise ValueError('the key value is empty!')
+        super().__init__(key)
 
     @property
     def key(self):
-        return self._key
+        return self.str
 
-    def hash(self):
-        return hash(self.key)
-
-    def is_true(self):
-        return bool(self.key)
-
-    def is_equal(self, other):
-        if isinstance(other, Key):
-            return self.key == other.key
-        return False
+    @key.setter
+    def key(self, key: str):
+        if not key:
+            raise ValueError('the key value is empty!')
+        self.str = key
 
     def to_dict(self):
         return dict(key=self.key)
 
     def to_sql(self):
-        return '`%s`' % self.key
+        return '`%s`' % super().to_sql()
 
 
 class Value(Node):
     def __init__(self, value=None):
+        if isinstance(value, Node):
+            raise ValueError('the value type (%s) must be python type' % type(value))
         self._value = value
 
     @property
     def value(self):
         return self._value
+
+    @value.setter
+    def value(self, value):
+        self._value = value
 
     def hash(self):
         return hash(self.value)
@@ -162,9 +149,7 @@ class Value(Node):
         return True
 
     def is_equal(self, other):
-        if isinstance(other, Value):
-            return self.value == other.value
-        return super().is_equal(other)
+        return self.value == other.value if isinstance(other, Value) else super().is_equal(other)
 
     def to_dict(self):
         return dict(value=self.value)
@@ -179,20 +164,6 @@ class Value(Node):
         return '"%s"' % self.value.__str__()
 
 
-class Table(Key):
-    @property
-    def table(self):
-        return self.key
-
-    def is_equal(self, other):
-        if isinstance(other, Table):
-            return self.table == other.table
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(table=self.table)
-
-
 class KeyValue(Node):
     def __init__(self, key: str, value=None):
         self._key = Key(key)
@@ -202,18 +173,23 @@ class KeyValue(Node):
     def key(self):
         return self._key
 
+    @key.setter
+    def key(self, key: str):
+        self._key = Key(key)
+
     @property
     def value(self):
         return self._value
 
-    def items(self):
-        return self.key, self.value
+    @value.setter
+    def value(self, value):
+        self._value = Value(value)
 
     def hash(self):
         return self.key.hash()
 
     def is_true(self):
-        return self.key.is_true() and self.value.is_true()
+        return self.key.is_true()
 
     def is_equal(self, other):
         if isinstance(other, KeyValue):
@@ -226,9 +202,25 @@ class KeyValue(Node):
     def to_sql(self):
         return '%s = %s' % (self.key.to_sql(), self.value.to_sql())
 
-    def __iter__(self):
+    def to_iter(self):
         yield self.key
         yield self.value
+
+    def __iter__(self):
+        return self.to_iter()
+
+
+class Table(Key):
+    @property
+    def name(self):
+        return self.key
+
+    @name.setter
+    def name(self, name: str):
+        self.key = name
+
+    def to_dict(self):
+        return dict(name=self.name)
 
 
 class Set(Node):
@@ -246,7 +238,22 @@ class Set(Node):
         return self.set
 
     def add(self, arg):
-        return self.set.add(arg)
+        self.set.add(arg)
+
+    def remove(self, arg):
+        self.set.remove(arg)
+
+    def pop(self):
+        return self.set.pop()
+
+    def update(self, *args):
+        self.set.update(*args)
+
+    def has(self, arg):
+        return self.set.__contains__(arg)
+
+    def __contains__(self, item):
+        return self.has(item)
 
     def is_true(self):
         return bool(self.set)
@@ -450,6 +457,9 @@ class Limit(Node):
     @skip.setter
     def skip(self, skip: int):
         self._skip = skip
+
+    def hash(self):
+        return hash(self.to_sql())
 
     def is_true(self):
         return self.take > 0 or self.skip > 0
@@ -790,7 +800,7 @@ class WhereStr(Where):
 
 
 class WhereBracket(Where):
-    def __init__(self, where_node: Where=Where()):
+    def __init__(self, where_node: Where=None):
         super().__init__(where=WHERE.BRACKET, left_child=where_node)
 
     def is_true(self):
@@ -1023,7 +1033,7 @@ class Insert(Method):
 
 
 class Delete(Method):
-    def __init__(self, table: str, where: Where=Where()):
+    def __init__(self, table: str, where: Where=None):
         super().__init__(table, METHOD.DELETE)
         self.__where__ = where
 
@@ -1049,7 +1059,7 @@ class Delete(Method):
 
 
 class Update(Method):
-    def __init__(self, table: str, where: Where=Where(), **kwargs):
+    def __init__(self, table: str, where: Where=None, **kwargs):
         super().__init__(table, METHOD.UPDATE)
         self.__where__ = where
         self.__sets__ = Sets(**kwargs)
@@ -1207,12 +1217,11 @@ class From(object):
         return Update(self.node.get('table'), self.node.get('where'), **self.node.get('sets'))
 
 if __name__ == '__main__':
-    o = OrderList(('id', 'desc'), 'name')
-    d = dict(a=3, b=4)
-    l = list((3, '4', 5, ''))
-    for ov in o:
-        print(ov)
-    kv = KeyValue('d', None)
-    print(kv)
-    print(kv.items())
-    print(kv.__iter__())
+    ss = Set(1, None, 4, Limit(1, 2), (1,2,3))
+    print(ss)
+    ss.update((Order('id', 'Desc'),), (Limit(1, 2), Order('b', 'Desc')))
+    print(ss)
+    ss.remove(Limit(1, 2))
+    print(ss)
+    print(ss.pop())
+    print(ss)
