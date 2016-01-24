@@ -52,7 +52,7 @@ class Node(object):
             return self.to_sql() == other.to_sql()
         if isinstance(other, str):
             return self.to_sql() == other
-        return False
+        return NotImplemented
 
     def __eq__(self, other):
         return self.is_equal(other)
@@ -96,7 +96,9 @@ class Null(Node):
 
 
 class Str(Node):
-    def __init__(self, str_arg: str):
+    def __init__(self, str_arg):
+        if not isinstance(str_arg, str):
+            raise TypeError('the str_arg type(%s) should be str type' % type(str_arg))
         self._str = str_arg
 
     @property
@@ -121,9 +123,9 @@ class Str(Node):
 
 
 class Key(Str):
-    def __init__(self, key: str):
-        if not key:
-            raise ValueError('the key value is empty!')
+    def __init__(self, key):
+        if not isinstance(key, str) or not key:
+            raise ValueError('the key arg should be str type and not empty!')
         super().__init__(key)
 
     @property
@@ -139,6 +141,8 @@ class Key(Str):
 
 class Value(Node):
     def __init__(self, value=None):
+        if isinstance(value, Node):
+            raise ValueError('the value arg type should be not instance of sql.Node')
         self._value = value
 
     @property
@@ -157,17 +161,17 @@ class Value(Node):
     def to_sql(self):
         if self.value is None:
             return 'NULL'
-        if isinstance(self.value, (int, float)):
+        if isinstance(self.value, (int, float, bool)):
             return str(self.value)
         if isinstance(self.value, Node):
             return self.value.to_sql()
-        return '"%s"' % self.value.__str__()
+        return '"%s"' % self.value
 
 
 class KeyValue(Node):
-    def __init__(self, key: str, value=None):
+    def __init__(self, key, value=None):
         self._key = Key(key)
-        self._value = Value(value) if not isinstance(value, Value) else value
+        self._value = Value(value)
 
     @property
     def key(self):
@@ -179,7 +183,7 @@ class KeyValue(Node):
 
     @value.setter
     def value(self, value):
-        self._value = Value(value) if not isinstance(value, Value) else value
+        self._value = Value(value)
 
     def hash(self):
         return self.key.hash()
@@ -203,8 +207,8 @@ class KeyValue(Node):
 
 
 class Set(Node):
-    def __init__(self, *args):
-        self._set = set(args)
+    def __init__(self, iterable):
+        self._set = set(item for item in iterable)
 
     @property
     def set(self):
@@ -228,26 +232,17 @@ class Set(Node):
     def len(self):
         return len(self.set)
 
-    def items(self):
-        return self.set
+    def __len__(self):
+        return self.len()
 
     def iter(self):
         return self.set.__iter__()
 
-    def add(self, arg):
-        self.set.add(arg)
+    def __iter__(self):
+        return self.iter()
 
-    def remove(self, arg):
-        self.set.remove(arg)
-
-    def pop(self):
-        return self.set.pop()
-
-    def update(self, *args):
-        self.set.update(*args)
-
-    def clear(self):
-        self.set.clear()
+    def items(self):
+        return self.set
 
     def has(self, item):
         return self.set.__contains__(item)
@@ -255,21 +250,157 @@ class Set(Node):
     def __contains__(self, item):
         return self.has(item)
 
-    def __len__(self):
-        return self.len()
+    def pop(self):
+        return self.set.pop()
 
-    def __iter__(self):
-        return self.iter()
+    def push(self, item):
+        self.set.add(item)
+
+    def is_disjoint(self, iterable):
+        """
+        是否相交
+        :param iterable:
+        :return:
+        """
+        return self.set.isdisjoint(iterable)
+
+    def is_subset(self, iterable):
+        """
+        是否子集
+        :param iterable:
+        :return:
+        """
+        return self.set.issubset(iterable)
+
+    def __lt__(self, other):
+        return self.is_subset(other)
+
+    def __le__(self, iterable):
+        return self.is_subset(iterable)
+
+    def is_supperset(self, iterable):
+        """
+        是否超集
+        :param iterable:
+        :return:
+        """
+        return self.set.issuperset(iterable)
+
+    def __gt__(self, other):
+        return self.is_supperset(other)
+
+    def __ge__(self, iterable):
+        return self.is_supperset(iterable)
+
+    def union(self, *iterables):
+        """
+        并集 - 返回新集合
+        :param iterables:
+        :return:
+        """
+        return Set(self.set.union(*iterables))
+
+    def __or__(self, other):
+        return self.union(other)
+
+    def update(self, *iterables):
+        """
+        并集 - 更新
+        :param iterables:
+        :return:
+        """
+        self.set.update(*iterables)
+
+    def __ior__(self, other):
+        self.update(other)
+        return self
+
+    def intersection(self, *iterables):
+        """
+        交集 - 返回新集合
+        :param iterables:
+        :return:
+        """
+        return Set(self.set.intersection(*iterables))
+
+    def __and__(self, other):
+        return self.intersection(other)
+
+    def intersection_update(self, *iterables):
+        self.set.intersection_update(*iterables)
+
+    def __iand__(self, other):
+        self.intersection_update(other)
+        return self
+
+    def difference(self, *iterables):
+        """
+        差集 - 返回新集合
+        :param iterables:
+        :return:
+        """
+        return Set(self.set.difference(*iterables))
+
+    def __sub__(self, other):
+        return self.difference(other)
+
+    def difference_update(self, *iterables):
+        self.set.difference_update(*iterables)
+
+    def __isub__(self, other):
+        self.difference_update(other)
+        return self
+
+    def symmetric_difference(self, iterable):
+        """
+        对称差 - 返回新集合
+        :param iterable:
+        :return:
+        """
+        return Set(self.set.symmetric_difference(iterable))
+
+    def __xor__(self, other):
+        return self.symmetric_difference(other)
+
+    def symmetric_difference_update(self, iterable):
+        self.set.symmetric_difference_update(iterable)
+
+    def __ixor__(self, other):
+        self.symmetric_difference_update(other)
+        return self
+
+    def delete(self, item):
+        self.set.remove(item)
+
+    def delete_if_exists(self, item):
+        self.set.discard(item)
+
+    def clear(self):
+        self.set.clear()
 
 
 class KeySet(Set):
     def __init__(self, *keys):
-        super().__init__(*(k if isinstance(k, Key) else Key(k) if isinstance(k, str) else Key(str(k)) for k in keys))
+        args = []
+        for k in keys:
+            if isinstance(k, str):
+                args.append(Key(k))
+            elif isinstance(k, Key):
+                args.append(k)
+            raise TypeError('the key tpye should be one of sql.Key and str')
+        super().__init__(args)
 
 
 class ValueSet(Set):
     def __init__(self, *values):
-        super().__init__(*(v if isinstance(v, Value) else Value(v) for v in values))
+        args = []
+        for v in values:
+            if isinstance(v, Value):
+                args.append(v)
+            elif not isinstance(v, Node):
+                args.append(Value(v))
+            raise TypeError('the value type should be one of sql.Value and python type')
+        super().__init__(args)
 
     def to_sql(self):
         return '( %s )' % super().to_sql()
@@ -307,35 +438,44 @@ class List(Node):
     def iter(self):
         return self.list.__iter__()
 
-    def clear(self):
-        self.list.clear()
-
     def has(self, item):
         return self.list.__contains__(item)
 
     def get(self, index: int):
         return self.list[index]
 
-    def pop(self, index):
-        return self.list.pop(index)
+    def set(self, index: int, value):
+        self.list[index] = value
 
     def add(self, item):
         self.list.append(item)
 
     def add_many(self, *items):
-        self.list.append(items)
+        self.list.extend(items)
 
-    def __contains__(self, item):
-        return self.has(item)
+    def pop(self, index: int):
+        return self.list.pop(index)
+
+    def clear(self):
+        self.list.clear()
 
     def __len__(self):
         return self.len()
 
-    def __getitem__(self, item: int):
-        return self.get(item)
-
     def __iter__(self):
         return self.iter()
+
+    def __contains__(self, item):
+        return self.has(item)
+
+    def __getitem__(self, index: int):
+        return self.get(index)
+
+    def __setitem__(self, index, value):
+        self.set(index, value)
+
+    def __delitem__(self, index):
+        self.pop(index)
 
 
 class KeyList(List):
@@ -806,7 +946,7 @@ class WhereExpression(Where):
 
     def to_sql(self):
         if self.operation in (WHERE.EQUAL, WHERE.NOT_EQUAL):
-            if self.right.value is None:
+            if hasattr(self.right, 'value') and getattr(self.right, 'value') is None:
                 return '%s IS NULL' % self.left.to_sql() if self.operation == WHERE.EQUAL \
                     else '%s IS NOT NULL' % self.left.to_sql()
         return super().to_sql()
@@ -1146,8 +1286,13 @@ class From(object):
         return Update(self.node.get('table'), self.node.get('where'), **self.node.get('sets'))
 
 if __name__ == '__main__':
-    kvs = KeyValueList(('id', 3), ('name', 'dgf'))
-    print(type(kvs.list))
-    print(kvs)
-    kvs.update(id=None)
-    print(kvs)
+    a = Set((1, 2, 3, 4, 5))
+    b = Set((4, 5, 6, 7, 8))
+    c = Set((7, 8, 9, 5, 1))
+    print(a-b)
+    print(a)
+    a -= b | c
+    print(a)
+    a.clear()
+    print(a)
+

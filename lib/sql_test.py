@@ -131,11 +131,9 @@ class Testvalue(unittest.TestCase):
         b = sql.Value(False)
         c = sql.Value('')
         d = sql.Value(0)
-        e = sql.Value(sql.Null())
         self.assertNotEqual(a, b)
         self.assertNotEqual(c, b)
         self.assertNotEqual(c, d)
-        self.assertNotEqual(d, e)
         self.assertNotEqual(c, '')
         self.assertNotEqual('', c)
 
