@@ -22,47 +22,6 @@ class Node(object):
     4、每一条SQL语句都抽象为一个类，每一条SQL子句都抽象为一个类。
     5、SQL语句之间的拼接合并由类的方法提供。
     """
-    def hash(self):
-        """
-        用以支持集合和字典
-        :return:
-        """
-        return hash(self.to_sql())
-
-    def __hash__(self):
-        return self.hash()
-
-    def is_true(self) -> bool:
-        """
-        是否能够输出合法能用的SQL语句
-        :return:
-        """
-        return False
-
-    def __bool__(self):
-        return self.is_true()
-
-    def is_equal(self, other) -> bool:
-        """
-        节点的基础比较器
-        :param other:
-        :return:
-        """
-        if isinstance(other, Node):
-            return self.to_sql() == other.to_sql()
-        if isinstance(other, str):
-            return self.to_sql() == other
-        return NotImplemented
-
-    def __eq__(self, other):
-        return self.is_equal(other)
-
-    def to_dict(self) -> dict:
-        """
-        输出节点的字典
-        :return:
-        """
-        return dict()
 
     def to_sql(self) -> str:
         """
@@ -71,28 +30,32 @@ class Node(object):
         """
         return ''
 
+    def __eq__(self, other):
+        if isinstance(other, Node):
+            return self.to_sql() == other.to_sql()
+        if isinstance(other, str):
+            return self.to_sql() == other
+        return NotImplemented
+
     def __str__(self):
         return '<Sql: %s>' % (self.to_sql())
 
     def __repr__(self):
-        return '<%s: %s>' % (self.__class__.__name__, self.to_sql())
+        return '<%s: %s>' % (type(self).__name__, self.to_sql())
 
 
 class Null(Node):
-    def hash(self):
-        return hash(0)
+    def __hash__(self):
+        return 0
 
-    def is_true(self):
+    def __bool__(self):
         return False
 
-    def is_equal(self, other):
-        return isinstance(other, Null) or False
-
-    def to_dict(self):
-        return dict()
+    def __eq__(self, other):
+        return True if isinstance(other, Null) else False
 
     def to_sql(self):
-        return 'NULL'
+        return ''
 
 
 class Str(Node):
@@ -105,18 +68,14 @@ class Str(Node):
     def str(self):
         return self._str
 
-    def hash(self):
+    def __hash__(self):
         return hash(self.str)
 
-    def is_true(self):
+    def __bool__(self):
         return bool(self.str)
 
-    def is_equal(self, other):
-        return self.str == other.str if isinstance(other, Str) \
-            else self.str == other if isinstance(other, str) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(str=self.str)
+    def __eq__(self, other):
+        return self.str == other.str if isinstance(other, Str) else super().__eq__(other)
 
     def to_sql(self):
         return self.str
@@ -132,9 +91,6 @@ class Key(Str):
     def key(self):
         return self.str
 
-    def to_dict(self):
-        return dict(key=self.key)
-
     def to_sql(self):
         return '`%s`' % super().to_sql()
 
@@ -149,14 +105,14 @@ class Value(Node):
     def value(self):
         return self._value
 
-    def is_true(self):
+    def __hash__(self):
+        return hash(self.to_sql())
+
+    def __bool__(self):
         return True
 
-    def is_equal(self, other):
-        return self.value == other.value if isinstance(other, Value) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(value=self.value)
+    def __eq__(self, other):
+        return self.value == other.value if isinstance(other, Value) else super().__eq__(other)
 
     def to_sql(self):
         if self.value is None:
@@ -185,198 +141,30 @@ class KeyValue(Node):
     def value(self, value):
         self._value = Value(value)
 
-    def hash(self):
-        return self.key.hash()
+    def __hash__(self):
+        return self.key.__hash__()
 
-    def is_true(self):
-        return self.key.is_true()
+    def __bool__(self):
+        return self.key.__bool__()
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, KeyValue):
-            return self.key.is_equal(other.key) and self.value.is_equal(other.value)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(key=self.key, value=self.value)
+            return self.key == other.key and self.value == other.value
+        return super().__eq__(other)
 
     def to_sql(self):
         return '%s = %s' % (self.key.to_sql(), self.value.to_sql())
 
-    def items(self):
-        return self.key, self.value
+    def to_tuple(self):
+        return self.key.key, self.value.value
 
 
-class Set(Node):
-    def __init__(self, iterable):
-        self._set = set(item for item in iterable)
-
-    @property
-    def set(self):
-        return self._set
-
-    def hash(self):
-        return 0
-
-    def is_true(self):
-        return bool(self.set)
-
-    def is_equal(self, other):
-        return self.set == other.set if isinstance(other, Set) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(set=self.set)
+class Set(Node, set):
+    def __init__(self, iterable=()):
+        super().__init__(iterable)
 
     def to_sql(self):
-        return ', '.join(item.to_sql() if isinstance(item, Node) else str(item) for item in self.set)
-
-    def len(self):
-        return len(self.set)
-
-    def __len__(self):
-        return self.len()
-
-    def iter(self):
-        return self.set.__iter__()
-
-    def __iter__(self):
-        return self.iter()
-
-    def items(self):
-        return self.set
-
-    def has(self, item):
-        return self.set.__contains__(item)
-
-    def __contains__(self, item):
-        return self.has(item)
-
-    def pop(self):
-        return self.set.pop()
-
-    def push(self, item):
-        self.set.add(item)
-
-    def is_disjoint(self, iterable):
-        """
-        是否相交
-        :param iterable:
-        :return:
-        """
-        return self.set.isdisjoint(iterable)
-
-    def is_subset(self, iterable):
-        """
-        是否子集
-        :param iterable:
-        :return:
-        """
-        return self.set.issubset(iterable)
-
-    def __lt__(self, other):
-        return self.is_subset(other)
-
-    def __le__(self, iterable):
-        return self.is_subset(iterable)
-
-    def is_supperset(self, iterable):
-        """
-        是否超集
-        :param iterable:
-        :return:
-        """
-        return self.set.issuperset(iterable)
-
-    def __gt__(self, other):
-        return self.is_supperset(other)
-
-    def __ge__(self, iterable):
-        return self.is_supperset(iterable)
-
-    def union(self, *iterables):
-        """
-        并集 - 返回新集合
-        :param iterables:
-        :return:
-        """
-        return Set(self.set.union(*iterables))
-
-    def __or__(self, other):
-        return self.union(other)
-
-    def update(self, *iterables):
-        """
-        并集 - 更新
-        :param iterables:
-        :return:
-        """
-        self.set.update(*iterables)
-
-    def __ior__(self, other):
-        self.update(other)
-        return self
-
-    def intersection(self, *iterables):
-        """
-        交集 - 返回新集合
-        :param iterables:
-        :return:
-        """
-        return Set(self.set.intersection(*iterables))
-
-    def __and__(self, other):
-        return self.intersection(other)
-
-    def intersection_update(self, *iterables):
-        self.set.intersection_update(*iterables)
-
-    def __iand__(self, other):
-        self.intersection_update(other)
-        return self
-
-    def difference(self, *iterables):
-        """
-        差集 - 返回新集合
-        :param iterables:
-        :return:
-        """
-        return Set(self.set.difference(*iterables))
-
-    def __sub__(self, other):
-        return self.difference(other)
-
-    def difference_update(self, *iterables):
-        self.set.difference_update(*iterables)
-
-    def __isub__(self, other):
-        self.difference_update(other)
-        return self
-
-    def symmetric_difference(self, iterable):
-        """
-        对称差 - 返回新集合
-        :param iterable:
-        :return:
-        """
-        return Set(self.set.symmetric_difference(iterable))
-
-    def __xor__(self, other):
-        return self.symmetric_difference(other)
-
-    def symmetric_difference_update(self, iterable):
-        self.set.symmetric_difference_update(iterable)
-
-    def __ixor__(self, other):
-        self.symmetric_difference_update(other)
-        return self
-
-    def delete(self, item):
-        self.set.remove(item)
-
-    def delete_if_exists(self, item):
-        self.set.discard(item)
-
-    def clear(self):
-        self.set.clear()
+        return ', '.join(item.to_sql() if isinstance(item, Node) else str(item) for item in self)
 
 
 class KeySet(Set):
@@ -387,7 +175,8 @@ class KeySet(Set):
                 args.append(Key(k))
             elif isinstance(k, Key):
                 args.append(k)
-            raise TypeError('the key tpye should be one of sql.Key and str')
+            else:
+                raise TypeError('the key tpye should be one of sql.Key and str')
         super().__init__(args)
 
 
@@ -399,88 +188,33 @@ class ValueSet(Set):
                 args.append(v)
             elif not isinstance(v, Node):
                 args.append(Value(v))
-            raise TypeError('the value type should be one of sql.Value and python type')
+            else:
+                raise TypeError('the value type should be one of sql.Value and python type')
         super().__init__(args)
 
     def to_sql(self):
         return '( %s )' % super().to_sql()
 
 
-class List(Node):
-    def __init__(self, *args):
-        self._list = list(args)
-
-    @property
-    def list(self):
-        return self._list
-
-    def hash(self):
-        return 0
-
-    def is_true(self):
-        return bool(self.list)
-
-    def is_equal(self, other):
-        return self.list == other.list if isinstance(other, List) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(list=self.list)
+class List(Node, list):
+    def __init__(self, iterable=()):
+        super().__init__(iterable)
 
     def to_sql(self):
-        return ', '.join(item.to_sql() if isinstance(item, Node) else str(item) for item in self.list)
-
-    def len(self):
-        return len(self.list)
-
-    def items(self):
-        return self.list
-
-    def iter(self):
-        return self.list.__iter__()
-
-    def has(self, item):
-        return self.list.__contains__(item)
-
-    def get(self, index: int):
-        return self.list[index]
-
-    def set(self, index: int, value):
-        self.list[index] = value
-
-    def add(self, item):
-        self.list.append(item)
-
-    def add_many(self, *items):
-        self.list.extend(items)
-
-    def pop(self, index: int):
-        return self.list.pop(index)
-
-    def clear(self):
-        self.list.clear()
-
-    def __len__(self):
-        return self.len()
-
-    def __iter__(self):
-        return self.iter()
-
-    def __contains__(self, item):
-        return self.has(item)
-
-    def __getitem__(self, index: int):
-        return self.get(index)
-
-    def __setitem__(self, index, value):
-        self.set(index, value)
-
-    def __delitem__(self, index):
-        self.pop(index)
+        return ', '.join(item.to_sql() if isinstance(item, Node) else str(item) for item in self)
 
 
 class KeyList(List):
     def __init__(self, *keys):
-        super().__init__(*(k if isinstance(k, Key) else Key(k) if isinstance(k, str) else Key(str(k)) for k in keys))
+        args = []
+        for k in keys:
+            if isinstance(k, Key):
+                args.append(k)
+            elif isinstance(k, str):
+                args.append(Key(k))
+            else:
+                raise TypeError('the key type should be one of sql.Key or python str')
+        super().__init__(args)
 
     def to_sql(self):
         return '( %s )' % super().to_sql()
@@ -488,60 +222,18 @@ class KeyList(List):
 
 class ValueList(List):
     def __init__(self, *values):
-        super().__init__(*(v if isinstance(v, Value) else Value(v) for v in values))
+        args = []
+        for v in values:
+            if isinstance(v, Value):
+                args.append(v)
+            elif not isinstance(v, Node):
+                args.append(Value(v))
+            else:
+                raise TypeError('the value type should be one of sql.Value or python type')
+        super().__init__(args)
 
     def to_sql(self):
         return '( %s )' % super().to_sql()
-
-
-class KeyValueList(List):
-    def __init__(self, *args):
-        super().__init__()
-        self._list = collections.OrderedDict()
-        for arg in args:
-            if isinstance(arg, KeyValue):
-                self._list[arg.key.key] = arg.value.value
-            elif isinstance(arg, (tuple, list)) and len(arg) == 2:
-                self._list[arg[0]] = arg[1]
-            else:
-                raise ValueError('arg type must be tuple(len = 2) or sql.KeyValue')
-
-    @property
-    def list(self):
-        return self._list
-
-    def to_sql(self):
-        return '%s VALUES %s' % (KeyList(*self.keys()).to_sql(), ValueList(*self.values()).to_sql())
-
-    def keys(self):
-        return self.list.keys()
-
-    def values(self):
-        return self.list.values()
-
-    def has(self, key: str):
-        return key in self.list
-
-    def get(self, key: str, default=None):
-        return self.list.get(key)
-
-    def set(self, key: str, value):
-        self.list[key] = value
-
-    def pop(self, key: str):
-        return self.list.pop(key)
-
-    def update(self, **kwargs):
-        self.list.update(**kwargs)
-
-    def __contains__(self, item: str):
-        return self.has(item)
-
-    def __getitem__(self, item):
-        return self.get(item)
-
-    def __setitem__(self, key, value):
-        self.set(key, value)
 
 
 class SelectList(List):
@@ -549,89 +241,40 @@ class SelectList(List):
         for s in selects:
             if not isinstance(s, (str, Key)):
                 raise ValueError('the select (%s) must be str or sql.Key' % s)
-        super().__init__(*selects)
-
-    @property
-    def selects(self):
-        return self.list
-
-    def to_dict(self):
-        return dict(selects=self.selects)
+        super().__init__(selects)
 
     def to_sql(self):
-        return '*' if not self.selects else super().to_sql()
+        return '*' if not self else super().to_sql()
 
 
-class Dict(Node):
-    def __init__(self, **kwargs):
-        self._dict = {k: v if isinstance(v, Node) else ValueList(*v) if isinstance(v, (tuple, list)) else Value(v)
-                      for k, v in kwargs.items()}
-
-    @property
-    def dict(self):
-        return self._dict
-
-    def hash(self):
-        return 0
-
-    def is_true(self):
-        return bool(self.dict)
-
-    def is_equal(self, other):
-        return self.dict == other.dict if isinstance(other, Dict) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(dict=self.dict)
+class Dict(Node, dict):
+    def __init__(self, *kv_args, **kwargs):
+        super().__init__(**kwargs)
+        for kv in kv_args:
+            if isinstance(kv, (tuple, list)) and len(kv) == 2:
+                self[kv[0]] = kv[1]
+            elif isinstance(kv, KeyValue):
+                self[kv.key.key] = kv.value.value
+            else:
+                raise TypeError('not accept type')
 
     def to_sql(self):
-        return ', '.join('%s = %s' % (Key(k).to_sql(), v.to_sql()) for k, v in self.dict.items())
+        return ','.join('%s = %s' % (Key(k).to_sql(), Value(v).to_sql()) for k, v in self.items())
 
-    def len(self):
-        return len(self.dict)
 
-    def items(self):
-        return self.dict.items()
+class OrderDict(Node, collections.OrderedDict):
+    def __init__(self, *kv_args):
+        super().__init__()
+        for kv in kv_args:
+            if isinstance(kv, (tuple, list)) and len(kv) == 2:
+                self[kv[0]] = kv[1]
+            elif isinstance(kv, KeyValue):
+                self[kv.key.key] = kv.value.value
+            else:
+                raise TypeError('not accept type')
 
-    def iter(self):
-        return self.dict.__iter__()
-
-    def keys(self):
-        return self.dict.keys()
-
-    def values(self):
-        return self.dict.values()
-
-    def clear(self):
-        self.dict.clear()
-
-    def has(self, key: str):
-        return self.dict.__contains__(key)
-
-    def get(self, key: str, default=None):
-        return self.dict.get(key, default)
-
-    def set(self, key: str, value):
-        value = value if isinstance(value, Node) else ValueList(*value) if isinstance(value, (tuple, list)) \
-            else Value(value)
-        self.dict[key] = value
-
-    def pop(self, key: str):
-        return self.dict.pop(key)
-
-    def __len__(self):
-        return self.len()
-
-    def __contains__(self, item):
-        return self.has(item)
-
-    def __getitem__(self, item):
-        return self.get(item)
-
-    def __setitem__(self, key, value):
-        self.set(key, value)
-
-    def __iter__(self):
-        return self.dict.__iter__()
+    def to_sql(self):
+        return '%s values %s' % (KeyList(*self.keys()).to_sql(), ValueList(*self.values()).to_sql())
 
 
 class Limit(Node):
@@ -647,55 +290,42 @@ class Limit(Node):
     def skip(self):
         return self._skip
 
-    def is_true(self):
-        return self.take > 0 or self.skip > 0
+    def __bool__(self):
+        return self.take >= 0 and self.skip >= 0
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Limit):
             return self.take == other.take and self.skip == other.skip
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(take=self.take, skip=self.skip)
+        return super().__eq__(other)
 
     def to_sql(self):
         return '%s,%s' % (self.take, self.skip)
 
-    def items(self):
+    def to_tuple(self):
         return self.take, self.skip
 
 
 @enum.unique
-class ORDER(enum.Enum):
-    ASC = 0
-    DESC = 1
-    _str_asc = 'asc'
-    _str_desc = 'desc'
+class ORDER(Node, enum.IntEnum):
+    ASC = 1, 'asc'
+    DESC = 2, 'desc'
 
-    def hash(self):
-        return hash(self)
+    def __new__(cls, value, sql):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
 
-    def is_equal(self, other):
-        return self == other
-
-    def is_true(self):
-        return bool(self)
-
-    def to_dict(self):
-        return dict(ORDER=self)
+        obj.sql = sql
+        return obj
 
     def to_sql(self):
-        if self == self.ASC:
-            return self._str_asc
-        if self == self.DESC:
-            return self._str_desc
+        return self.sql
 
     @classmethod
     def from_str(cls, _str: str):
         _str = _str.strip().lower()
-        if _str == cls._str_asc:
+        if _str == 'asc':
             return cls.ASC
-        if _str == cls._str_desc:
+        if _str == 'desc':
             return cls.DESC
         raise ValueError
 
@@ -724,21 +354,18 @@ class Order(Node):
     def order(self):
         return self._order
 
-    def is_true(self):
-        return self.key.is_true() and self.order.is_true()
+    def __bool__(self):
+        return self.key and self.order
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Order):
-            return self.key.is_equal(other.key) and self.order.is_equal(other.order)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(key=self.key, ORDER=self.order)
+            return self.key == other.key and self.order == other.order
+        return super().__eq__(other)
 
     def to_sql(self):
         return '%s %s' % (self.key.to_sql(), self.order.to_sql())
 
-    def items(self):
+    def to_tuple(self):
         return self.key, self.order
 
 
@@ -754,126 +381,53 @@ class OrderDesc(Order):
 
 class OrderList(List):
     def __init__(self, *orders):
-        super().__init__(*(o if isinstance(o, Order)
-                           else Order(o[0], o[1]) if isinstance(o, (tuple, list)) and len(o) == 2
-                           else Order(str(o), ORDER.ASC)
-                           for o in orders))
+        super().__init__(o if isinstance(o, Order)
+                         else Order(o[0], o[1]) if isinstance(o, (tuple, list)) and len(o) == 2
+                         else Order(str(o), ORDER.ASC)
+                         for o in orders)
 
     def asc(self, key: str):
-        self.add(OrderAsc(key))
+        self.append(OrderAsc(key))
         return self
 
     def desc(self, key: str):
-        self.add(OrderDesc(key))
+        self.append(OrderDesc(key))
         return self
 
 
 @enum.unique
-class WHERE(enum.Enum):
+class WHERE(Node, enum.IntEnum):
 
-    EQUAL = 1
-    _str_equal = '='
-    LESS = 2
-    _str_less = '<'
-    GREATER = 3
-    _str_greater = '>'
-    LESS_EQUAL = 4
-    _str_less_equal = '<='
-    GREATER_EQUAL = 5
-    _str_greater_equal = '>='
-    NOT_EQUAL = 6
-    _str_not_equal = '!='
+    EQUAL = 1, '='
+    LESS = 2, '<'
+    GREATER = 3, '>'
+    LESS_EQUAL = 4, '<='
+    GREATER_EQUAL = 5, '>='
+    NOT_EQUAL = 6, '!='
 
-    IN = 10
-    _str_in = 'in'
-    BETWEEN = 11
-    _str_between = 'between'
-    LIKE = 12
-    _str_like = 'like'
+    IN = 10, 'in'
+    BETWEEN = 11, 'between'
+    LIKE = 12, 'like'
 
-    NOT_IN = 13
-    _str_not_in = 'not in'
-    NOT_BETWEEN = 14
-    _str_not_between = 'not between'
-    NOT_LIKE = 15
-    _str_not_like = 'not like'
+    NOT_IN = 13, 'not in'
+    NOT_BETWEEN = 14, 'not between'
+    NOT_LIKE = 15, 'not like'
 
-    AND = 21
-    _str_and = 'and'
-    OR = 22
-    _str_or = 'or'
+    AND = 21, 'and'
+    OR = 22, 'or'
     BRACKET = 31
     STR = 32
     NULL = 41
     TRUE = 42
 
-    def is_true(self):
-        return self != self.NULL
-
-    def is_equal(self, other):
-        return self == other
-
-    def to_dict(self):
-        return dict(WHERE=self)
+    def __new__(cls, value, sql=''):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.sql = sql
+        return obj
 
     def to_sql(self):
-        if self == self.EQUAL:
-            return self._str_equal
-        if self == self.NOT_EQUAL:
-            return self._str_not_equal
-        if self == self.LESS:
-            return self._str_less
-        if self == self.LESS_EQUAL:
-            return self._str_less_equal
-        if self == self.GREATER:
-            return self._str_greater
-        if self == self.GREATER_EQUAL:
-            return self._str_greater_equal
-        if self == self.IN:
-            return self._str_in
-        if self == self.NOT_IN:
-            return self._str_not_in
-        if self == self.BETWEEN:
-            return self._str_between
-        if self == self.NOT_BETWEEN:
-            return self._str_not_between
-        if self == self.LIKE:
-            return self._str_like
-        if self == self.NOT_LIKE:
-            return self._str_not_like
-        if self == self.AND:
-            return self._str_and
-        if self == self.OR:
-            return self._str_or
-        return ''
-
-    @classmethod
-    def from_str(cls, op: str):
-        op = op.strip().lower()
-        if op == cls._str_equal:
-            return cls.EQUAL
-        if op == cls._str_not_equal or op == '<>':
-            return cls.NOT_EQUAL
-        if op == cls._str_less:
-            return cls.LESS
-        if op == cls._str_less_equal:
-            return cls.LESS_EQUAL
-        if op == cls._str_greater:
-            return cls.GREATER
-        if op == cls._str_greater_equal:
-            return cls.GREATER_EQUAL
-        if op == cls._str_in:
-            return cls.IN
-        if op == cls._str_not_in:
-            return cls.NOT_IN
-        if op == cls._str_between:
-            return cls.BETWEEN
-        if op == cls._str_not_between:
-            return cls.NOT_BETWEEN
-        if op == cls._str_like:
-            return cls.LIKE
-        if op == cls._str_not_like:
-            return cls.NOT_LIKE
+        return self.sql
 
 
 class Where(Node):
@@ -898,26 +452,19 @@ class Where(Node):
     def operation(self):
         return self._operation
 
-    def is_true(self):
-        return self.operation.is_true() and (self.left.is_true() or self.right.is_true())
+    def __bool__(self):
+        return bool(self.operation) and (bool(self.left) or bool(self.right))
 
-    def is_equal(self, other):
-        return self.left.is_equal(other.left) and self.right.is_equal(other.right) \
-               and self.operation.is_equal(other.operation) if isinstance(other, Where) else super().is_equal(other)
-
-    def to_dict(self):
-        return dict(operation=self.operation, left=self.left, right=self.right)
+    def __eq__(self, other):
+        if isinstance(other, Where):
+            return self.operation == other.operation and self.left == other.left and self.right == other.right
+        return super().__eq__(other)
 
     def to_sql(self):
         return '%s %s %s' % (self.left.to_sql(), self.operation.to_sql(), self.right.to_sql())
 
-    def items(self):
+    def to_tuple(self):
         return self.operation, self.left, self.right
-
-
-class WhereNull(Where):
-    def __init__(self):
-        super().__init__(WHERE.NULL, Null(), Null())
 
 
 class WhereTrue(Where):
@@ -1013,157 +560,121 @@ class WhereNotLike(WhereExpression):
 
 
 @enum.unique
-class METHOD(enum.Enum):
-    INSERT = 1
-    DELETE = 2
-    UPDATE = 3
-    SELETE = 4
+class METHOD(Node, enum.IntEnum):
+    INSERT = 1, 'insert'
+    DELETE = 2, 'delete'
+    UPDATE = 3, 'update'
+    SELETE = 4, 'select'
 
-    _str_insert = 'insert'
-    _str_delete = 'delete'
-    _str_update = 'update'
-    _str_select = 'select'
-
-    def hash(self):
-        return self.__hash__()
-
-    def is_true(self):
-        return bool(self)
-
-    def is_equal(self, other):
-        return self == other
-
-    def to_dict(self):
-        return dict(METHOD=self)
+    def __new__(cls, value, sql=''):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.sql = sql
+        return obj
 
     def to_sql(self):
-        if self == self.INSERT:
-            return self._str_insert
-        if self == self.DELETE:
-            return self._str_delete
-        if self == self.UPDATE:
-            return self._str_update
-        if self == self.SELETE:
-            return self._str_select
+        return self.sql
 
 
 class Method(Node):
-    def __init__(self, table: str, method: METHOD):
-        self.__table__ = Key(table)
-        self.__method__ = method
+    def __init__(self, method: METHOD, table: str):
+        self._method = method
+        self._table = Key(table)
 
     @property
     def table(self):
-        return self.__table__
+        return self._table
 
     @property
     def method(self):
-        return self.__method__
+        return self._method
 
-    def is_true(self):
-        return self.table.is_true() and self.method.is_true()
+    def __bool__(self):
+        return self.table and self.method
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Method):
-            return self.table.is_equal(other.table) and self.method.is_equal(other.method)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        return dict(table=self.table, method=self.method)
+            return self.table == other.table and self.method == other.method
+        return super().__eq__(other)
 
     def to_sql(self):
-        return '%s from %s' % (self.__method__, self.__table__)
+        return '%s from %s' % (self._method.to_sql(), self._table.to_sql())
 
 
 class Insert(Method):
-    def __init__(self, table: str, **kwargs):
-        super().__init__(table, METHOD.INSERT)
-        self.__sets__ = Dict(**kwargs)
+    def __init__(self, table: str, *kv_args):
+        super().__init__(METHOD.INSERT, table)
+        self._to_insert = OrderDict(*kv_args)
 
     @property
-    def sets(self):
-        return self.__sets__
+    def datas(self):
+        return self._to_insert
 
-    def is_true(self):
-        return super().is_true() and self.sets.is_true()
+    def __bool__(self):
+        return bool(super()) and bool(self.datas)
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Insert):
-            return super().is_equal(other) and self.sets.is_equal(other.sets)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        d = super().to_dict()
-        d.update(insert=self.sets)
-        return d
+            return super().__eq__(other) and self.datas == other.datas
+        return super().__eq__(other)
 
     def to_sql(self):
-        return '%s into %s set %s' % (self.method.to_sql(), self.table.to_sql(), self.sets.to_sql())
+        return '%s into %s %s' % (self.method.to_sql(), self.table.to_sql(), self.datas.to_sql())
 
 
 class Delete(Method):
-    def __init__(self, table: str, where: Where=None):
-        super().__init__(table, METHOD.DELETE)
-        self.__where__ = where
+    def __init__(self, table: str, **kwargs):
+        super().__init__(METHOD.DELETE, table)
+        self._where = kwargs.get('where')
 
     @property
     def where(self):
-        return self.__where__
+        return self._where
 
-    def is_true(self):
-        return super().is_true() and self.where.is_true()
+    def __bool__(self):
+        return bool(super()) and bool(self.where)
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Delete):
-            return super().is_equal(other) and self.where.is_equal(other.where)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        d = super().to_dict()
-        d.update(where=self.where)
-        return d
+            return super().__eq__(other) and self.where == other.where
+        return super().__eq__(other)
 
     def to_sql(self):
-        return '%s from %s where %s' % (self.method.to_sql(), self.table.to_sql(), self.where.to_sql())
+        return '%s where %s' % (super().to_sql(), self.where.to_sql())
 
 
 class Update(Method):
-    def __init__(self, table: str, where: Where=None, **kwargs):
-        super().__init__(table, METHOD.UPDATE)
-        self.__where__ = where
-        self.__sets__ = Dict(**kwargs)
+    def __init__(self, table: str, *kv_args, **kwargs):
+        super().__init__(METHOD.UPDATE, table)
+        self._where = kwargs.get('where')
+        self._to_update = Dict(*kv_args)
 
     @property
     def where(self):
-        return self.__where__
+        return self._where
 
     @property
-    def sets(self):
-        return self.__sets__
+    def datas(self):
+        return self._to_update
 
-    def is_true(self):
-        return super().is_true() and self.where.is_true() and self.sets.is_true()
+    def __bool__(self):
+        return bool(super()) and bool(self.datas) and bool(self.where)
 
-    def is_equal(self, other):
+    def __eq__(self, other):
         if isinstance(other, Update):
-            return super().is_equal(other) and self.where.is_equal(other.where) and self.sets.is_equal(other.sets)
-        return super().is_equal(other)
-
-    def to_dict(self):
-        d = super().to_dict()
-        d.update(where=self.where, sets=self.sets)
-        return d
+            return super().__eq__(other) and self.where == other.where and self.datas.__eq__(other.datas)
+        return super().__eq__(other)
 
     def to_sql(self):
         return '%s %s set %s where %s' % \
-               (self.method.to_sql(), self.table.to_sql(), self.sets.to_sql(), self.where.to_sql())
+               (self.method.to_sql(), self.table.to_sql(), self.datas.to_sql(), self.where.to_sql())
 
 
 class Select(Method):
     def __init__(self, table: str, *list_select, **kwargs):
-        super().__init__(table, METHOD.SELETE)
+        super().__init__(METHOD.SELETE, table)
         self.__selection__ = SelectList(*list_select) if list_select else SelectList()
-        self.__where__ = kwargs.get('where', WhereNull())
+        self.__where__ = kwargs.get('where', WhereTrue())
         self.__order__ = kwargs.get('order', OrderList())
         self.__limit__ = kwargs.get('limit', Limit())
 
@@ -1286,13 +797,5 @@ class From(object):
         return Update(self.node.get('table'), self.node.get('where'), **self.node.get('sets'))
 
 if __name__ == '__main__':
-    a = Set((1, 2, 3, 4, 5))
-    b = Set((4, 5, 6, 7, 8))
-    c = Set((7, 8, 9, 5, 1))
-    print(a-b)
-    print(a)
-    a -= b | c
-    print(a)
-    a.clear()
-    print(a)
-
+    w = Update('html', KeyValue('id', 3), ('name', 'dgf'), where=WhereIn('id', 1, 2, 3, 4))
+    print(bool(w))
