@@ -1,4 +1,5 @@
 # coding: utf-8
+import collections
 
 
 class A(object):
@@ -57,14 +58,5 @@ class T(object):
 
 
 if __name__ == '__main__':
-    c = C('test a', 'test b')
-    assert c.a == 'test a'
-    assert c.b == 'test b'
-    i = I(1, 2, 3, 4)
-    print(i.type_args(), i.len_args(), i.str_args())
-    ii = I(item for item in range(1, 5))
-    print(ii.type_args(), ii.len_args(), ii.str_args())
-    iii = I(*(item for item in range(1, 5)))
-    print(iii.type_args(), iii.len_args(), iii.str_args())
-    t = T(1, 2)
-    print(t.to_tuple(), type(t.to_tuple()))
+    d = dict((('id', 'name', 1), ('name', None)))
+    print(d)

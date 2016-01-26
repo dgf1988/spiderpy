@@ -247,7 +247,7 @@ class TestWhere(unittest.TestCase):
         self.assertNotEqual(node_1, node_2)
 
     def test_where_and(self):
-        a_1 = WhereAnd()
+        a_1 = And()
         self.assertFalse(a_1)
         self.assertEqual(a_1, '')
         self.assertEqual(a_1, WhereNode())
@@ -256,13 +256,13 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(a_1.to_dict(), dict(type=WHERE.AND, left=Node(), right=Node()))
         self.assertEqual(a_1.to_sql(), '')
 
-        a_2 = WhereAnd(WhereNull(), WhereTrue())
+        a_2 = And(WhereNull(), WhereTrue())
         self.assertTrue(a_2)
         self.assertEqual(a_2, '1')
         self.assertEqual(a_2.to_dict(), dict(type=a_2.operation, left=a_2.left, right=a_2.right))
         self.assertEqual(a_2.to_sql(), '1')
 
-        a_3 = WhereAnd(WhereStr('a=1'), WhereTrue())
+        a_3 = And(WhereStr('a=1'), WhereTrue())
         self.assertTrue(a_3)
         self.assertEqual(a_3, 'a=1 and 1')
         self.assertEqual(a_3, WhereNode(WHERE.AND, WhereStr('a=1'), WhereTrue()))
@@ -274,7 +274,7 @@ class TestWhere(unittest.TestCase):
         self.assertNotEqual(a_1, a_3)
 
     def test_where_or(self):
-        a = WhereOr(WhereNull(), WhereTrue())
+        a = Or(WhereNull(), WhereTrue())
         self.assertTrue(a)
         self.assertEqual(a, '1')
         self.assertEqual(a, WhereNode(WHERE.OR, WhereNull(), WhereTrue()))
@@ -282,7 +282,7 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(a.to_sql(), '1')
 
     def test_where_and_or_by(self):
-        a = WhereAnd(WhereEqual('a', 1), WhereIn('b', 'a', 'b'))
+        a = And(WhereEqual('a', 1), WhereIn('b', 'a', 'b'))
         self.assertEqual(a, WhereEqual('a', 1).and_by(WhereIn('b', 'a', 'b')))
         b = a.or_by(WhereStr('c=1'))
 

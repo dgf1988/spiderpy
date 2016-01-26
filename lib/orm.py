@@ -441,17 +441,17 @@ class TableSet(DbSet):
             if self.db.execute('select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                     for k, v in self.db.fetch_all()[0].datas()})
+                                     for k, v in self.db.fetch_all()[0].insert()})
         elif kwargs:
             whereequals = [lib.sql.WhereEqual(key, value if not isinstance(value, Table)
                            else value.primarykey)
                            for key, value in kwargs.items() if key in self.mappings.keys()]
-            whereget = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.WhereAnd, whereequals)
+            whereget = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.And, whereequals)
             sqlget = 'select * from %s where %s' % (self.name, whereget.to_sql())
             if self.db.execute(sqlget):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                     for k, v in self.db.fetch_all()[0].datas()})
+                                     for k, v in self.db.fetch_all()[0].insert()})
 
     def find(self, **kwargs):
         if kwargs:
@@ -465,7 +465,7 @@ class TableSet(DbSet):
                 return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)
-                           for k, v in one.datas()})
+                           for k, v in one.insert()})
                         for one in self.db.fetch_all()]
 
     def list(self, take=10, skip=0):
@@ -473,7 +473,7 @@ class TableSet(DbSet):
             return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)
-                           for k, v in one.datas()})
+                           for k, v in one.insert()})
                     for one in self.db.fetch_all()]
 
     def __iter__(self):
@@ -488,7 +488,7 @@ class TableSet(DbSet):
         if kwargs:
             whereequals = [lib.sql.WhereEqual(key, value if not isinstance(value, Table) else value.primarykey)
                            for key, value in kwargs.items() if key in self.mappings]
-            sqlwhere = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.WhereAnd, whereequals)
+            sqlwhere = whereequals[0] if len(whereequals) == 1 else functools.reduce(lib.sql.And, whereequals)
         if sqlwhere:
             self.db.execute('select count(*) as num from %s where %s' % (self.name, sqlwhere.to_sql()))
         else:

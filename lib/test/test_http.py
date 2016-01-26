@@ -9,7 +9,7 @@ class TestHttpStatus(unittest.TestCase):
         print(lib.http.METHOD.__members__)
 
     def test_CODE(self):
-        for code, status in lib.http.CODE.datas():
+        for code, status in lib.http.CODE.insert():
             self.assertEqual(code, status)
 
         self.assertNotIn(0, lib.http.CODE)
