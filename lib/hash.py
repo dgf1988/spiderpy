@@ -4,5 +4,5 @@ import hashlib
 
 def md5(data):
     m = hashlib.md5()
-    m.update(data)
+    m.datas(data)
     return m.hexdigest()

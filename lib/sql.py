@@ -329,23 +329,27 @@ class Tree(Node):
         return super().__eq__(other)
 
     def and_(self, other):
-        other = other if isinstance(other, Node) else None
-        if other is None:
-            raise TypeError('not accept type')
         return And(self, other)
 
+    def __and__(self, other):
+        return self.and_(other)
+
     def or_(self, other):
-        other = other if isinstance(other, Node) else None
-        if other is None:
-            raise TypeError('not accept type')
         return Or(self, other)
+    
+    def __or__(self, other):
+        return self.or_(other)
+
+    def bracket(self):
+        return Bracket(self)
 
     def to_sql(self):
-        if self.left and self.right and self.tree:
+        tree = bool(self.tree)
+        left = bool(self.left)
+        right = bool(self.right)
+        if tree and left and right:
             return ' '.join((self.left.to_sql(), self.tree.to_sql(), self.right.to_sql()))
-        if self.left or self.right:
-            return self.left.to_sql() if self.left else self.right.to_sql()
-        return ''
+        return self.left.to_sql() if left else self.right.to_sql() if right else ''
 
 
 class And(Tree):
@@ -513,6 +517,7 @@ class WHERE(Node, enum.IntEnum):
     NOT_BETWEEN = 14, 'not between'
     NOT_LIKE = 15, 'not like'
 
+    NULL = 31
     STR = 32
     TRUE = 42
 
@@ -535,9 +540,10 @@ class WHERE(Node, enum.IntEnum):
 
 class Where(Tree):
     def __init__(self, operation, left, right):
-        super().__init__(WHERE.from_str(operation) if isinstance(operation, str) else operation,
-                         Str(left) if isinstance(left, str) else left,
-                         Value(right) if not isinstance(right, Node) else right)
+        super().__init__(operation if isinstance(operation, Node)
+                         else WHERE.from_str(operation) if isinstance(operation, str) else Str(str(operation)),
+                         left if isinstance(left, Node) else Str(left) if isinstance(left, str) else None,
+                         right if isinstance(right, Node) else Value(right))
 
     @property
     def operation(self):
@@ -547,7 +553,40 @@ class Where(Tree):
         return hash(self.to_sql())
 
     def to_sql(self):
+        if self.operation in (WHERE.EQUAL, WHERE.NOT_EQUAL, '=', '!='):
+            if not self.right:
+                return '%s is NULL' % self.left.to_sql() if self.operation == WHERE.EQUAL \
+                    else '%s is not NULL' % self.left.to_sql()
         return ' '.join(sql for sql in (self.left.to_sql(), self.operation.to_sql(), self.right.to_sql()) if sql)
+
+    @classmethod
+    def from_obj(cls, obj_where):
+        if isinstance(obj_where, str):
+            return WhereStr(obj_where)
+        if isinstance(obj_where, Node):
+            return obj_where
+        if isinstance(obj_where, (tuple, list)):
+            len_obj = len(obj_where)
+            if len_obj == 2:
+                k, v = obj_where
+                return WhereEqual(k, v)
+            if len_obj == 3:
+                op, k, v = obj_where
+                w = WhereNull()
+                try:
+                    w = Where(op, k, v)
+                except TypeError:
+                    k, op, v = obj_where
+                    try:
+                        w = Where(op, k, v)
+                    except TypeError:
+                        return w
+                return w
+
+
+class WhereNull(Where):
+    def __init__(self):
+        super().__init__(WHERE.NULL, Null(), Null())
 
 
 class WhereTrue(Where):
@@ -563,13 +602,6 @@ class WhereStr(Where):
 class WhereExpression(Where):
     def __init__(self, operation, key: str, value):
         super().__init__(operation, Key(key), value if isinstance(value, Node) else Value(value))
-
-    def to_sql(self):
-        if self.operation in (WHERE.EQUAL, WHERE.NOT_EQUAL):
-            if not self.right:
-                return '%s is NULL' % self.left.to_sql() if self.operation == WHERE.EQUAL \
-                    else '%s is not NULL' % self.left.to_sql()
-        return super().to_sql()
 
 
 class WhereEqual(WhereExpression):
@@ -696,26 +728,26 @@ class Insert(Method):
         self._to_insert = ListDict(*to_insert)
 
     @property
-    def insert(self):
+    def datas(self):
         return self._to_insert
 
     def __bool__(self):
-        return bool(super()) and bool(self.insert)
+        return bool(super()) and bool(self.datas)
 
     def __eq__(self, other):
         if isinstance(other, Insert):
-            return super().__eq__(other) and self.insert == other.insert
+            return super().__eq__(other) and self.datas == other.datas
         return super().__eq__(other)
 
     def to_sql(self):
-        return '%s into %s %s' % (self.method.to_sql(), self.table.to_sql(), self.insert.to_sql()) if self.insert \
+        return '%s into %s %s' % (self.method.to_sql(), self.table.to_sql(), self.datas.to_sql()) if self.datas \
             else ''
 
 
 class Delete(Method):
     def __init__(self, table: str, **kwargs):
         super().__init__(METHOD.DELETE, table)
-        self._where = kwargs.get('where', Null())
+        self._where = kwargs.get('where', WhereNull())
 
     @property
     def where(self):
@@ -737,36 +769,36 @@ class Delete(Method):
 class Update(Method):
     def __init__(self, table: str, *to_update, **kwargs):
         super().__init__(METHOD.UPDATE, table)
-        self._where = kwargs.get('where', Null())
         self._to_update = Dict(**{k if not isinstance(k, Key) else k.key: v if not isinstance(v, Value) else v.value
                                   for k, v in to_update})
+        self._where = kwargs.get('where', WhereNull())
 
     @property
     def where(self):
         return self._where
 
     @property
-    def update(self):
+    def datas(self):
         return self._to_update
 
     def __bool__(self):
-        return bool(super()) and bool(self.update) and bool(self.where)
+        return bool(super()) and bool(self.datas) and bool(self.where)
 
     def __eq__(self, other):
         if isinstance(other, Update):
-            return super().__eq__(other) and self.where == other.where and self.update.__eq__(other.update)
+            return super().__eq__(other) and self.where == other.where and self.datas.__eq__(other.datas)
         return super().__eq__(other)
 
     def to_sql(self):
         return '%s %s set %s where %s' % \
-               (self.method.to_sql(), self.table.to_sql(), self.update.to_sql(), self.where.to_sql()) if self else ''
+               (self.method.to_sql(), self.table.to_sql(), self.datas.to_sql(), self.where.to_sql()) if self else ''
 
 
 class Select(Method):
     def __init__(self, table: str, *to_select, **kwargs):
         super().__init__(METHOD.SELECT, table)
         self._select = SelectList(*to_select)
-        self._where = kwargs.get('where', Null())
+        self._where = kwargs.get('where', WhereNull())
         self._order = kwargs.get('order', OrderList())
         self._limit = kwargs.get('limit', Limit())
 
@@ -817,7 +849,7 @@ class From(object):
     def __init__(self, table: str):
         self._node = dict(
                 table=table,
-                where=Null(),
+                where=WhereNull(),
                 order=OrderList(),
                 limit=Limit())
 
@@ -827,7 +859,7 @@ class From(object):
 
     def clear(self):
         self.node.update(
-                where=Null(),
+                where=WhereNull(),
                 order=OrderList(),
                 limit=Limit())
 
@@ -885,5 +917,5 @@ class From(object):
 
 
 if __name__ == '__main__':
-    w = Update('html', KeyValue('id', 3), ('name', 'dgf'), where=WhereIn('id', 1, 2, 3, 4))
-    print(w)
+    ww = Where.from_obj('id=3')
+    print(ww.and_(WhereStr('name="dgf"')))

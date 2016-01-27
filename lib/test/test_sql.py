@@ -247,6 +247,13 @@ class TestTree(unittest.TestCase):
         self.assertEqual(sql.Tree(sql.Str('a'), sql.Str(''), sql.Str('c')), 'c')
         self.assertEqual(sql.Tree(sql.Str('a'), sql.Str('b'), sql.Str('')), 'b')
 
+    def test_and_or_bracket(self):
+        a = sql.Tree(sql.TREE.AND, sql.Str('a'), sql.Str('b'))
+        self.assertEqual(a, 'a and b')
+        self.assertEqual(a.and_(sql.Str('c')), 'a and b and c')
+        self.assertEqual(a.or_(sql.Str('c')), 'a and b or c')
+        self.assertEqual(a.bracket(), '( a and b )')
+
 
 class TestAndOrBracket(unittest.TestCase):
     def test_And(self):
@@ -270,6 +277,7 @@ class TestAndOrBracket(unittest.TestCase):
         self.assertTrue(a)
         self.assertFalse(sql.Bracket(sql.Str('')))
         self.assertEqual(a, '( a )')
+        self.assertEqual(a.bracket(), '( ( a ) )')
 
 
 class TestLimit(unittest.TestCase):
@@ -347,6 +355,7 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(sql.WHERE.NOT_BETWEEN, 'not between')
 
     def test_where(self):
+        self.assertRaises(TypeError, sql.Where, '=', 1, 'a')
         w = sql.Where('=', 'id', 3)
         self.assertTrue(w)
         self.assertTrue(sql.Where('=', 'id', sql.Value(None)))
@@ -370,6 +379,11 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(sql.WhereLike('id', ''), '`id` like ""')
         self.assertRaises(TypeError, sql.WhereNotLike, 'id', 1)
         self.assertEqual(sql.WhereNotLike('id', '%s'), '`id` not like "%s"')
+
+    def test_where_null(self):
+        self.assertFalse(sql.WhereNull())
+        self.assertEqual(sql.WhereNull(), '')
+        self.assertEqual(sql.WhereNull().and_(sql.WhereStr('a=3')), 'a=3')
 
 
 class TestMethod(unittest.TestCase):

@@ -441,7 +441,7 @@ class TableSet(DbSet):
             if self.db.execute('select * from %s where %s = %s' % (self.name, self.primarykey, primary_key)):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                     for k, v in self.db.fetch_all()[0].insert()})
+                                     for k, v in self.db.fetch_all()[0].datas()})
         elif kwargs:
             whereequals = [lib.sql.WhereEqual(key, value if not isinstance(value, Table)
                            else value.primarykey)
@@ -451,7 +451,7 @@ class TableSet(DbSet):
             if self.db.execute(sqlget):
                 return self.table(**{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                                      else TableSet(self.db, self.mappings[k].py_type).get(v)
-                                     for k, v in self.db.fetch_all()[0].insert()})
+                                     for k, v in self.db.fetch_all()[0].datas()})
 
     def find(self, **kwargs):
         if kwargs:
@@ -465,7 +465,7 @@ class TableSet(DbSet):
                 return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)
-                           for k, v in one.insert()})
+                           for k, v in one.datas()})
                         for one in self.db.fetch_all()]
 
     def list(self, take=10, skip=0):
@@ -473,7 +473,7 @@ class TableSet(DbSet):
             return [self.table(
                         **{k: v if not isinstance(self.mappings[k], ForeignKey) or v is None
                             else TableSet(self.db, self.mappings[k].py_type).get(v)
-                           for k, v in one.insert()})
+                           for k, v in one.datas()})
                     for one in self.db.fetch_all()]
 
     def __iter__(self):
