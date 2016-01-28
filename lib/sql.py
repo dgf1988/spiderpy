@@ -15,6 +15,9 @@ import collections
 """
 
 
+__all__ = ['From', 'WhereEqual']
+
+
 class Node(object):
     """
     1、一切皆节点
@@ -404,7 +407,7 @@ class Limit(Node):
         return super().__eq__(other)
 
     def to_sql(self):
-        return '%s, %s' % (self.take, self.skip)
+        return '%s, %s' % (self.skip, self.take)
 
 
 @enum.unique
@@ -490,6 +493,17 @@ class OrderList(List):
                          else Order(o[0], o[1]) if isinstance(o, (tuple, list)) and len(o) == 2
                          else Order(str(o), ORDER.ASC)
                          for o in orders))
+
+    def add(self, order):
+        if isinstance(order, (tuple, list)) and len(order) == 2:
+            k, v = order
+            self.append(Order(k, v))
+        elif isinstance(order, Order):
+            self.append(order)
+        elif isinstance(order, str):
+            k, v = order.strip().split()
+            self.append(Order(k, v))
+        return self
 
     def asc(self, key: str):
         self.append(OrderAsc(key))
@@ -881,6 +895,10 @@ class From(object):
 
     def order(self, *args):
         self.node['order'] = OrderList(*args)
+        return self
+
+    def add_order(self, order):
+        self.node['order'].add(order)
         return self
 
     def order_asc(self, key: str):

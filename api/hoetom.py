@@ -1,82 +1,90 @@
 # -*- coding: utf-8 -*-
 import datetime
+import enum
 import re
+
 import api.html
+
 import lib.orm
-import lib.db
 
 
-class Sex(object):
-    Default = 0
-    Boy = 1
-    Girl = 2
+class SEX(enum.IntEnum):
+    Default = 0, '未知'
+    Boy = 1, '男'
+    Girl = 2, '女'
 
-    def __init__(self, sex):
-        self.sex = None
-        if isinstance(sex, str):
-            self.sex = self.from_str(sex)
-        if isinstance(sex, int):
-            if sex in (1, 2):
-                self.sex = sex
+    def __new__(cls, value, msg):
+        obj = int.__new__(cls, value)
+        obj._value_ = value
+        obj.msg = msg
+        return obj
 
-    def to_str(self):
-        return '男' if self.sex == self.Boy else '女'
+    def __str__(self):
+        return '<%s: %s, %s>' % (self.__class__.__name__, self.value, self.msg)
 
-    @staticmethod
-    def from_str(sex: str):
+    @classmethod
+    def from_obj(cls, obj):
+        if isinstance(obj, str):
+            return cls.from_str(obj)
+        if isinstance(obj, int):
+            return cls.from_int(obj)
+        return cls.Default
+
+    @classmethod
+    def from_int(cls, index: int):
+        index_sex = None
+        for k, v in cls.__members__.items():
+            if v.value == index:
+                index_sex = v
+        return index_sex or cls.Default
+
+    @classmethod
+    def from_str(cls, sex: str):
         sex = sex.strip()
-        if sex == '男':
-            return Sex.Boy
-        if sex == '女':
-            return Sex.Girl
-        return Sex.Default
+        index_sex = None
+        for k, v in cls.__members__.items():
+            if v.msg == sex:
+                index_sex = v
+        return index_sex or SEX.Default
 
 
-@lib.orm.table_name('country')
-@lib.orm.table_columns('id', 'name')
-@lib.orm.table_uniques(name_='name')
+@lib.orm.table_set('country', fields='id name', primarykey='id', unique=dict(c_name='name'))
 class Country(lib.orm.Table):
-    id = lib.orm.PrimaryKey()
+    id = lib.orm.AutoIntField()
     name = lib.orm.CharField()
 
 
-@lib.orm.table_name('rank')
-@lib.orm.table_columns('id', 'rank')
-@lib.orm.table_uniques(rank_='rank')
+@lib.orm.table_set('rank', 'id rank', 'id', dict(r_rank='rank'))
 class Rank(lib.orm.Table):
-    id = lib.orm.PrimaryKey()
+    id = lib.orm.AutoIntField()
     rank = lib.orm.CharField()
 
 
-@lib.orm.table_name('playerid')
-@lib.orm.table_columns('id', 'playerid', 'posted')
-@lib.orm.table_uniques(playerid_='playerid')
+@lib.orm.table_set('playerid', 'id playerid', 'id', dict(p_playerid='playerid'))
 class Playerid(lib.orm.Table):
-    id = lib.orm.PrimaryKey()
+    id = lib.orm.AutoIntField()
     playerid = lib.orm.IntField()
-    posted = lib.orm.TimestampField(current_timestamp=True)
 
     def to_url(self):
         return 'http://www.hoetom.com/playerinfor_2011.jsp?id=%s' % self['playerid']
 
 
-@lib.orm.table_name('player')
-@lib.orm.table_columns('id', 'p_id', 'p_name', 'p_sex', 'p_nat', 'p_rank', 'p_birth')
-@lib.orm.table_uniques(playerid='p_id')
+@lib.orm.table_set('player', 'id p_id p_name p_sex p_nat p_rank p_birth', 'id', dict(p_name='p_name', p_id='p_id'),
+                   dict(p_nat=Country, p_rank=Rank))
 class Player(lib.orm.Table):
-    id = lib.orm.PrimaryKey()
-    p_id = lib.orm.ForeignKey(table=Playerid)
+    id = lib.orm.AutoIntField()
+    p_id = lib.orm.IntField()
     p_name = lib.orm.CharField()
-    p_sex = lib.orm.IntField(default=Sex.Default, nullable=True)
-    p_nat = lib.orm.ForeignKey(table=Country, nullable=True)
-    p_rank = lib.orm.ForeignKey(table=Rank, nullable=True)
+    p_sex = lib.orm.IntField(default=SEX.Default, nullable=True)
+    p_nat = lib.orm.IntField(nullable=True)
+    p_rank = lib.orm.IntField(nullable=True)
     p_birth = lib.orm.DateField(nullable=True)
 
     def to_str(self):
         return '姓名：%s，性别：%s，国籍：%s，段位：%s，生日：%s' % \
-               (self['p_name'], Sex(self['p_sex']).to_str(),
-                self['p_nat']['name'] if self['p_nat'] else None,
-                self['p_rank']['rank'] if self['p_rank'] else None,
+               (self['p_name'], SEX.from_obj(self['p_sex']).msg,
+                self['p_nat'],
+                self['p_rank'],
                 self['p_birth'])
 
     @classmethod
@@ -107,15 +115,18 @@ class Player(lib.orm.Table):
         if m_birth:
             birth = m_birth.group('birth')
 
-        return cls(p_id=Playerid(playerid=int(hoetomid)), p_name=name, p_sex=Sex.from_str(sex), p_nat=Country(name=nat),
+        return cls(p_id=Playerid(playerid=int(hoetomid)), p_name=name, p_sex=SEX.from_str(sex), p_nat=Country(name=nat),
                    p_rank=Rank(rank=rank),
                    p_birth=datetime.datetime.strptime(birth, '%Y-%m-%d').date() if birth else None)
 
 
-@lib.orm.dbset_tables(player=Player, rank=Rank, country=Country, playerid=Playerid)
-class Db(lib.orm.DbSet):
+class Db(lib.orm.DbContext):
     def __init__(self):
-        super().__init__(lib.db.Database(user='root', passwd='guofeng001', db='hoetom'))
+        super().__init__(lib.orm.Mysql(user='root', passwd='guofeng001', db='hoetom'))
+        self.player = lib.orm.TableSet(self.db, Player)
+        self.rank = self.table_set(Rank)
+        self.country = self.table_set(Country)
+        self.playerid = self.table_set(Playerid)
 
 
 class Page(api.html.Page):
@@ -156,8 +167,22 @@ if __name__ == '__main__':
     dbhtml = api.html.Db().open()
     dbhoetom = Db().open()
 
-    print('html=', dbhtml.html.count())
-    print('player=', dbhoetom.player.count())
+    assert SEX.Default == 0
+    assert SEX.from_obj('') == 0
+    assert SEX.from_obj(333) == 0
+
+    print(dbhoetom.country.count())
+    print(dbhoetom.rank.count())
+    print(dbhoetom.playerid.count())
+    print(dbhoetom.player.count())
+
+    p = dbhoetom.player.get(40)
+    print(p.to_str())
+    c = dbhoetom.country.get(4)
+    r = dbhoetom.rank.get(9)
+    p['p_nat'] = c
+    p['p_rank'] = r
+    print(p.to_str())
 
     dbhtml.close()
     dbhoetom.close()

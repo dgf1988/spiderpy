@@ -4,6 +4,11 @@ import datetime
 import collections
 
 
+__all__ = ['IntField', 'AutoIntField', 'CharField', 'VarcharField', 'TextField',
+           'DateField', 'TimeField', 'YearField', 'DatetimeField', 'TimestampField',
+           'COLLATE', 'ENGINE', 'MAPPING', 'Table', 'table_set']
+
+
 def _convert_value_to_sql(value):
     if value is None:
         return 'NULL'
@@ -20,29 +25,25 @@ class ENGINE(enum.IntEnum):
     InnoDB = 1
 
 
-class MAPPING(enum.IntEnum):
-    INT = 10, 'INT', int
+class MAPPING(enum.Enum):
+    INT = ('INT', int)
 
-    CHAR = 20, 'CHAR', str
-    VARCHAR = 21, 'VARCHAR', str
-    TEXT = 22, 'TEXT', str
+    CHAR = ('CHAR', str)
+    VARCHAR = ('VARCHAR', str)
+    TEXT = ('TEXT', str)
 
-    DATE = 30, 'DATE', datetime.date
-    TIME = 31, 'TIME', datetime.time
-    YEAR = 32, 'YEAR', datetime.datetime
-    DATETIME = 33, 'DATETIME', datetime.datetime
-    TIMESTAMP = 34, 'TIMESTAMP', datetime.datetime
+    DATE = ('DATE', datetime.date)
+    TIME = ('TIME', datetime.time)
+    YEAR = ('YEAR', datetime.datetime)
+    DATETIME = ('DATETIME', datetime.datetime)
+    TIMESTAMP = ('TIMESTAMP', datetime.datetime)
 
-    def __new__(cls, value, db_type, py_type):
-        obj = int.__new__(cls, value)
-        obj._value_ = value
+    def __new__(cls, db_type, py_type):
+        obj = object.__new__(cls)
+        obj._value_ = obj
+        obj.db_type = db_type
+        obj.py_type = py_type
         return obj
-
-    def __init__(self, value, db_type, py_type):
-        super(int, self).__init__()
-        self.enum_value = value
-        self.db_type = db_type
-        self.py_type = py_type
 
     def __call__(self, value):
         return isinstance(value, self.py_type)
@@ -61,6 +62,9 @@ class Field(object):
         self.auto_increment = auto_increment
         self.current_timestamp = current_timestamp
         self.on_update = on_update
+
+    def is_auto(self):
+        return self.auto_increment or self.current_timestamp or self.on_update
 
     def to_sql(self):
         items = ['`%s`' % self.name,
@@ -86,10 +90,6 @@ class Field(object):
         if not self:
             raise RuntimeError('the field no true')
         return '<%s: %s>' % (self.__class__.__name__, self.to_sql())
-
-    def __iter__(self):
-        yield self.name
-        yield self
 
 
 class IntField(Field):
@@ -172,6 +172,7 @@ class Table(collections.OrderedDict):
 
     def __setitem__(self, key, value):
         fields = self.get_table_fields()
+        foreigns = self.get_table_foreigns()
         if key in fields:
             if fields[key].mapping(value) or value is None:
                 return super().__setitem__(key, value)
@@ -190,6 +191,13 @@ class Table(collections.OrderedDict):
     def has_primarykey(self):
         # 主键是否有值
         return bool(self[self.get_table_primarykey()])
+
+    def get_items(self):
+        return ((k, self[k]) for k, f in self.get_table_fields().items() if not f.is_auto())
+
+    def __bool__(self):
+        sum_bool = sum(1 for k in self.get_table_fields() if self[k] == self.get_table_fields()[k].default)
+        return sum_bool < len(self.get_table_fields())
 
     @classmethod
     def set_table_name(cls, name):
@@ -225,9 +233,9 @@ class Table(collections.OrderedDict):
 
     @classmethod
     def add_table_fields(cls, *fields):
-        for name, field in fields:
-            if name and isinstance(field, Field):
-                cls._fields[name] = field
+        for field in fields:
+            if field.name and isinstance(field, Field):
+                cls._fields[field.name] = field
 
     @classmethod
     def get_table_uniques(cls):
@@ -288,41 +296,62 @@ class Table(collections.OrderedDict):
         return ''.join(items)
 
 
-def table_set(name='', fields=None, unique=None, foreign=None, collate=COLLATE.utf8_general_ci, engine=ENGINE.InnoDB):
+class Foreign(object):
+    def __init__(self, table):
+        self.table = table
+
+    def __call__(self, value):
+        return isinstance(value, self.table)
+
+
+def table_set(name='', fields=None, primarykey=None,
+              unique=None, foreign=None, collate=COLLATE.utf8_general_ci, engine=ENGINE.InnoDB):
     def set_table_cls(cls):
-        cls.set_table_name(name) if name else cls.set_table_name(cls.__name__)
+        # 设置表名
+        cls._name = name or cls.__name__
 
-        # reset table attrs
-        cls._fields = collections.OrderedDict()
-        cls._primarykey = []
-        cls._uniques = dict()
-        cls._foreign = dict()
+        # 设置主键
+        cls._primarykey = list(e for e in primarykey.strip().split() if e) if isinstance(primarykey, str) \
+            else list(primarykey) if isinstance(primarykey, (tuple, list)) \
+            else []
 
+        # 设置字段映射
         ks = []
         if isinstance(fields, str):
-            ks = fields.split()
+            ks = list(e for e in fields.strip().split() if e)
+        elif isinstance(fields, (tuple, list)):
+            ks = fields
+        cls._fields = collections.OrderedDict()
         for k in ks:
             if k in cls.__dict__ and isinstance(cls.__dict__[k], Field):
                 # cls.__dict__[c].name = cls.__dict__[c].name or c
                 cls.__dict__[k].name = k
                 cls.add_table_fields(cls.__dict__[k])
+
+        # 设置约束 - 唯一约束和外键约束
+        cls._uniques = dict()
+        cls._foreign = dict()
         if unique:
             cls.set_table_uniques(**unique)
         if foreign:
-            cls.set_table_foreigns(**foreign)
+            cls.set_table_foreigns(**{k: Foreign(v) for k, v in foreign.items()
+                                      if isinstance(v, type) and issubclass(v, Table)})
+
+        # 设置字符集和数据库引擎
         cls.set_table_collate(collate)
         cls.set_table_engine(engine)
         return cls
     return set_table_cls
 
 
-@table_set(fields='id pid', unique=dict(_pid='pid'))
+@table_set(fields='id pid', primarykey='id', unique=dict(_pid='pid'))
 class PID(Table):
     id = AutoIntField()
     pid = IntField()
 
 
-@table_set(fields='id pid name age birth update_at', unique=dict(_name_='name'), foreign=dict(pid=PID))
+@table_set(fields='id pid name age birth update_at', primarykey='id',
+           unique=dict(_name_='name'), foreign=dict(pid=PID))
 class Test(Table):
     id = AutoIntField()
     pid = IntField()
@@ -333,5 +362,6 @@ class Test(Table):
 
 
 if __name__ == '__main__':
-    t = Test(pid=3)
+    t = Test()
     print(t)
+    print(*t.get_items())

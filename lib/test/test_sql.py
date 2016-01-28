@@ -300,8 +300,8 @@ class TestLimit(unittest.TestCase):
 
     def test_sql(self):
         self.assertEqual(sql.Limit(), '0, 0')
-        self.assertEqual(sql.Limit(1), '1, 0')
-        self.assertEqual(sql.Limit(1, -2), '1, -2')
+        self.assertEqual(sql.Limit(1), '0, 1')
+        self.assertEqual(sql.Limit(1, -2), '-2, 1')
 
 
 class TestOrder(unittest.TestCase):

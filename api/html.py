@@ -1,18 +1,18 @@
 # coding: utf-8
 import re
 import os
+import hashlib
+
 import requests
+
 import lib.url
-import lib.hash
 import lib.orm
-import lib.db
 
 
-@lib.orm.table_name('html')
-@lib.orm.table_columns('id', 'html_url', 'html_code', 'html_encoding', 'html_update')
-@lib.orm.table_uniques(url='html_url')
+@lib.orm.table_set('html', fields='id html_url html_code html_encoding html_update',
+                   primarykey='id', unique=dict(url='html_url'))
 class Html(lib.orm.Table):
-    id = lib.orm.PrimaryKey()
+    id = lib.orm.AutoIntField()
     html_url = lib.orm.VarcharField()
     html_code = lib.orm.IntField()
     html_encoding = lib.orm.CharField(default='utf-8', nullable=True)
@@ -25,10 +25,10 @@ class Html(lib.orm.Table):
         return topage
 
 
-@lib.orm.dbset_tables(html=Html)
-class Db(lib.orm.DbSet):
+class Db(lib.orm.DbContext):
     def __init__(self, user='root', passwd='guofeng001', database='html'):
-        super().__init__(lib.db.Database(user=user, passwd=passwd, db=database))
+        super().__init__(lib.orm.Mysql(user=user, passwd=passwd, db=database))
+        self.html = self.table_set(Html)
 
 
 class Page(object):
@@ -37,7 +37,7 @@ class Page(object):
     def __init__(self, str_url: str, encoding='utf-8'):
         self.encoding = encoding
         self.url = str_url
-        self.urlmd5 = lib.hash.md5(self.url.encode())
+        self.urlmd5 = hashlib.md5(self.url.encode()).hexdigest()
         self.code = 0
         self.text = ''
 
@@ -62,7 +62,7 @@ class Page(object):
 
     def get_filepath(self):
         url = lib.url.UrlParse(self.url)
-        urlpath = url.strpath()
+        urlpath = url.path
         urlhost = url.host
         if urlpath == '/' or urlpath == '':
             return self.StorRoot+urlhost+'/'+self.urlmd5[0:2]
@@ -92,12 +92,11 @@ class Page(object):
 
 
 if __name__ == '__main__':
-    dbhtml = Db().open()
+    d = Db().open()
 
-    list_html = dbhtml.html.list(10, 2000)
-    list_page = [html.to_page() for html in list_html]
-    list_title = [page.get_title() for page in list_page if page.load()]
-    for title in list_title:
-        print(title)
-
-    dbhtml.close()
+    list_html = d.html.list(limit=(10, 0))
+    list_page = [h.entity.to_page() for h in list_html]
+    list_title = [p.get_title() for p in list_page if p.load()]
+    for t in list_title:
+        print(t)
+    d.close()
