@@ -121,7 +121,7 @@ class Controller(object):
         self.response.header.add('Content-type', 'text/html')
         body_items = [
             'url=%s' % self.request.url_parse,
-            'host=%s' % self.request.environ.host,
+            'host=%s' % self.request.environ.netloc,
             'method=%s' % self.request.method,
         ]
         body = '<br/>'.join(body_items)

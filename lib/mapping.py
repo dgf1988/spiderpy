@@ -6,7 +6,7 @@ import collections
 
 __all__ = ['IntField', 'AutoIntField', 'CharField', 'VarcharField', 'TextField',
            'DateField', 'TimeField', 'YearField', 'DatetimeField', 'TimestampField',
-           'COLLATE', 'ENGINE', 'MAPPING', 'Table', 'table_set']
+           'COLLATE', 'ENGINE', 'MAPPING', 'Table', 'table']
 
 
 def _convert_value_to_sql(value):
@@ -66,6 +66,9 @@ class Field(object):
     def is_auto(self):
         return self.auto_increment or self.current_timestamp or self.on_update
 
+    def allow(self, value):
+        return value is None or self.mapping(value) or value == self.default
+
     def to_sql(self):
         items = ['`%s`' % self.name,
                  '%s(%s)' % (self.mapping.db_type, self.size) if self.size > 0 else self.mapping.db_type,
@@ -84,11 +87,9 @@ class Field(object):
         return ' '.join(items)
 
     def __bool__(self):
-        return bool(self.name) and isinstance(self.mapping, MAPPING)
+        return bool(self.name)
 
     def __str__(self):
-        if not self:
-            raise RuntimeError('the field no true')
         return '<%s: %s>' % (self.__class__.__name__, self.to_sql())
 
 
@@ -166,19 +167,23 @@ class Table(collections.OrderedDict):
     def __init__(self, **kwargs):
         super().__init__()
         # 初始化字段
-        for name, field in self.get_table_fields().items():
+        for k in self.get_table_fields():
             # 有指定值则使用指定值，没有则使用默认值
-            self[name] = kwargs.get(name) if name in kwargs else field.default
+            self[k] = kwargs.get(k)
+
+    def __str__(self):
+        return '<%s: %s>' % (self.get_table_name(), ' '.join(str(_item_) for _item_ in self.items()))
 
     def __setitem__(self, key, value):
-        fields = self.get_table_fields()
-        foreigns = self.get_table_foreigns()
-        if key in fields:
-            if fields[key].mapping(value) or value is None:
+        if key in self.get_table_fields():
+            if self.get_table_fields(key).allow(value):
                 return super().__setitem__(key, value)
-            raise TypeError('the value %s (%s) not instance of %s' % (value, type(value), fields[key].mapping.py_type))
-        else:
-            raise KeyError('the key %s not in %s' % (key, fields.keys()))
+            raise TypeError('the value %s (%s) not instance of %s' %
+                            (value, type(value), self.get_table_fields(key).mapping.py_type))
+        raise KeyError('the key %s not in %s' % (key, self.get_table_fields().keys()))
+
+    def set(self, key, value):
+        self[key] = value
 
     def get_primarykey(self):
         # 主键取值
@@ -192,12 +197,36 @@ class Table(collections.OrderedDict):
         # 主键是否有值
         return bool(self[self.get_table_primarykey()])
 
-    def get_items(self):
-        return ((k, self[k]) for k, f in self.get_table_fields().items() if not f.is_auto())
+    @classmethod
+    def auto_keys(cls):
+        fields = cls.get_table_fields()
+        return [k for k in fields if fields[k].is_auto()]
 
-    def __bool__(self):
-        sum_bool = sum(1 for k in self.get_table_fields() if self[k] == self.get_table_fields()[k].default)
-        return sum_bool < len(self.get_table_fields())
+    @classmethod
+    def data_keys(cls):
+        fields = cls.get_table_fields()
+        return [k for k in fields if not fields[k].is_auto()]
+
+    def auto_values(self):
+        return [self[k] for k in self if self.get_table_fields(k).is_auto()]
+
+    def data_values(self):
+        return [self[k] for k in self if not self.get_table_fields(k).is_auto()]
+
+    # 自动字段
+    def auto_items(self):
+        return [(k, self[k]) for k in self if self.get_table_fields(k).is_auto()]
+
+    # 数据字段
+    def data_items(self, filter_value_lambda=None):
+        if not filter_value_lambda:
+            return [(k, self[k]) for k in self if not self.get_table_fields(k).is_auto()]
+        return [(k, self[k]) for k in self if not self.get_table_fields(k).is_auto() and filter_value_lambda(self[k])]
+
+    def foreign_items(self, by_dict=False):
+        if not by_dict:
+            return [(k, self.get_table_foreigns(k), self[k]) for k in self if k in self.get_table_foreigns()]
+        return {k: (self.get_table_foreigns(k), self[k]) for k in self if k in self.get_table_foreigns()}
 
     @classmethod
     def set_table_name(cls, name):
@@ -210,6 +239,8 @@ class Table(collections.OrderedDict):
     @classmethod
     def set_table_primarykey(cls, *names):
         cls._primarykey = list(names)
+        for k in cls._primarykey:
+            cls.get_table_fields(k).auto_increment = True
 
     @classmethod
     def get_table_primarykey(cls):
@@ -224,12 +255,12 @@ class Table(collections.OrderedDict):
             return cls._primarykey[0]
 
     @classmethod
-    def get_table_fields(cls):
-        return cls._fields
+    def get_table_fields(cls, key=''):
+        return cls._fields[key] if key else cls._fields
 
     @classmethod
     def set_table_fields(cls, *fields):
-        cls._fields = collections.OrderedDict(*fields)
+        cls._fields = collections.OrderedDict(fields)
 
     @classmethod
     def add_table_fields(cls, *fields):
@@ -246,8 +277,8 @@ class Table(collections.OrderedDict):
         cls._uniques = kwargs
 
     @classmethod
-    def get_table_foreigns(cls):
-        return cls._foreign
+    def get_table_foreigns(cls, key=''):
+        return cls._foreign[key] if key else cls._foreign
 
     @classmethod
     def set_table_foreigns(cls, **kwargs):
@@ -296,62 +327,50 @@ class Table(collections.OrderedDict):
         return ''.join(items)
 
 
-class Foreign(object):
-    def __init__(self, table):
-        self.table = table
-
-    def __call__(self, value):
-        return isinstance(value, self.table)
-
-
-def table_set(name='', fields=None, primarykey=None,
-              unique=None, foreign=None, collate=COLLATE.utf8_general_ci, engine=ENGINE.InnoDB):
+def table(name='', fields=None, primarykey=None,
+          unique=None, foreign=None, collate=COLLATE.utf8_general_ci, engine=ENGINE.InnoDB):
     def set_table_cls(cls):
-        # 设置表名
-        cls._name = name or cls.__name__
+        # 表名
+        cls.set_table_name(name or cls.__name__)
 
-        # 设置主键
-        cls._primarykey = list(e for e in primarykey.strip().split() if e) if isinstance(primarykey, str) \
-            else list(primarykey) if isinstance(primarykey, (tuple, list)) \
+        # 字段映射
+        _keys_ = fields if isinstance(fields, (tuple, list)) \
+            else list(_name_ for _name_ in fields.strip().split() if _name_) if isinstance(fields, str) \
             else []
+        _fields_ = []
+        for _key_ in _keys_:
+            if _key_ in cls.__dict__ and isinstance(cls.__dict__[_key_], Field):
+                cls.__dict__[_key_].name = cls.__dict__[_key_].name or _key_
+                _fields_.append((_key_, cls.__dict__[_key_]))
+        cls.set_table_fields(*_fields_)
 
-        # 设置字段映射
-        ks = []
-        if isinstance(fields, str):
-            ks = list(e for e in fields.strip().split() if e)
-        elif isinstance(fields, (tuple, list)):
-            ks = fields
-        cls._fields = collections.OrderedDict()
-        for k in ks:
-            if k in cls.__dict__ and isinstance(cls.__dict__[k], Field):
-                # cls.__dict__[c].name = cls.__dict__[c].name or c
-                cls.__dict__[k].name = k
-                cls.add_table_fields(cls.__dict__[k])
+        # 主键
+        _primary_key_ = primarykey if isinstance(primarykey, (tuple, list)) \
+            else (_name_ for _name_ in primarykey.strip().split() if _name_) if isinstance(primarykey, str) \
+            else []
+        cls.set_table_primarykey(*_primary_key_)
 
-        # 设置约束 - 唯一约束和外键约束
-        cls._uniques = dict()
-        cls._foreign = dict()
+        # 唯一键， 外键
         if unique:
             cls.set_table_uniques(**unique)
         if foreign:
-            cls.set_table_foreigns(**{k: Foreign(v) for k, v in foreign.items()
-                                      if isinstance(v, type) and issubclass(v, Table)})
+            cls.set_table_foreigns(**foreign)
 
-        # 设置字符集和数据库引擎
+        # 字符集， 数据库引擎
         cls.set_table_collate(collate)
         cls.set_table_engine(engine)
         return cls
     return set_table_cls
 
 
-@table_set(fields='id pid', primarykey='id', unique=dict(_pid='pid'))
+@table(fields='id pid', primarykey='id', unique=dict(_pid='pid'))
 class PID(Table):
     id = AutoIntField()
     pid = IntField()
 
 
-@table_set(fields='id pid name age birth update_at', primarykey='id',
-           unique=dict(_name_='name'), foreign=dict(pid=PID))
+@table(fields='id pid name age birth update_at', primarykey='id',
+       unique=dict(_name_='name'), foreign=dict(pid=PID))
 class Test(Table):
     id = AutoIntField()
     pid = IntField()
@@ -364,4 +383,5 @@ class Test(Table):
 if __name__ == '__main__':
     t = Test()
     print(t)
-    print(*t.get_items())
+    print(*t.auto_items())
+    print(*t.items())

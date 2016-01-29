@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import urllib.parse
 
-__all__ = ['parse', 'UrlParse']
+__all__ = ['parse']
 
 
 class UrlParse(object):
@@ -17,11 +17,11 @@ class UrlParse(object):
         return self._parse.scheme or self._default_scheme or ''
 
     @property
-    def host(self):
+    def netloc(self):
         return self._parse.netloc or ''
 
     @property
-    def hostname(self):
+    def host(self):
         return self._parse.hostname or self._default_hostname or ''
 
     @property
@@ -70,7 +70,7 @@ class UrlParse(object):
         yield 'scheme', self.scheme
         yield 'username', self.username
         yield 'password', self.password
-        yield 'hostname', self.hostname
+        yield 'host', self.host
         yield 'port', self.port
         yield 'path', self.path
         yield 'params', self.params
@@ -82,7 +82,7 @@ class UrlParse(object):
             scheme=self.scheme,
             username=self.username,
             password=self.password,
-            hostname=self.hostname,
+            host=self.host,
             port=self.port,
             path=self.path,
             params=self.params,
@@ -92,15 +92,15 @@ class UrlParse(object):
 
     def str_url(self):
         scheme = self.scheme.lower()
-        hostname = self.hostname
+        host = self.host
         port = self.port
         path = self.path
         params = self.params
         query = self.query
         fragment = self.fragment
-        url_items = [scheme, ':'] if scheme and hostname else []
-        if hostname:
-            url_items.append('//%s' % hostname)
+        url_items = [scheme, ':'] if scheme and host else []
+        if host:
+            url_items.append('//%s' % host)
             if scheme == 'http' and port and port != 80:
                 url_items.append(':%s' % port)
         if not path.startswith('/'):
@@ -116,8 +116,8 @@ class UrlParse(object):
 
     def is_true(self):
         return isinstance(self.scheme, str) and isinstance(self.username, str) and isinstance(self.password, str) and \
-                isinstance(self.hostname, str) and isinstance(self.port, int) and isinstance(self.path, str) and \
-                isinstance(self.params, str) and isinstance(self.query, str) and isinstance(self.fragment, str)
+               isinstance(self.host, str) and isinstance(self.port, int) and isinstance(self.path, str) and \
+               isinstance(self.params, str) and isinstance(self.query, str) and isinstance(self.fragment, str)
 
     def is_equal(self, other):
         return self.dict_url() == other.dict_url() if isinstance(other, UrlParse) else str(self) == str(other)
@@ -126,7 +126,7 @@ class UrlParse(object):
         return self.str_url()
 
     def __str__(self):
-        return self.to_str()
+        return '<%s: %s>' % (self.__class__.__name__, self.str_url())
 
     def __iter__(self):
         return self.items()
@@ -137,18 +137,4 @@ class UrlParse(object):
 
 def parse(url: str, default_scheme='', default_hostname='', default_port=0) -> UrlParse:
     return UrlParse(url, default_scheme, default_hostname, default_port)
-
-
-class UrlBuilder(object):
-    def __init__(self, scheme='', username='', password='', hostname='', port=0, path='', params='', query='', fragment=''):
-        pass
-
-    def is_true(self):
-        pass
-
-    def is_equal(self, other):
-        pass
-
-    def to_str(self):
-        pass
 

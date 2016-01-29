@@ -77,7 +77,7 @@ class Router(collections.OrderedDict):
 
         # 请求链接解析
         parse_url = urllib.parse.urlparse(url)
-        if parse_url.hostname != self.host:
+        if parse_url.host != self.host:
             return None, [], dict()
         list_path = [each for each in parse_url.path.split('/') if each]
         len_path = len(list_path)

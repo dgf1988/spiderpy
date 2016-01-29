@@ -935,5 +935,4 @@ class From(object):
 
 
 if __name__ == '__main__':
-    ww = Where.from_obj('id=3')
-    print(ww.and_(WhereStr('name="dgf"')))
+    pass

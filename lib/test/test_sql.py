@@ -421,10 +421,6 @@ class TestMethod(unittest.TestCase):
         self.assertTrue(a)
         self.assertEqual(a, 'select * from `table`')
 
-
-
-
-
 if __name__ == '__main__':
     unittest.main()
 
