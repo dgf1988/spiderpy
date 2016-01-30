@@ -144,38 +144,40 @@ class TestKeyValue(unittest.TestCase):
 
 class TestSet(unittest.TestCase):
     def test_init(self):
-        self.assertRaises(TypeError, sql.Set, '')
+        self.assertRaises(TypeError, sql.Set, ('',))
 
     def test_sql(self):
-        a = sql.Set(sql.Key('id'), sql.Value('name'))
+        a = sql.Set((sql.Key('id'), sql.Value('name')))
         self.assertIn(a, ('`id`, "name"', '"name", `id`'))
 
 
 class TestKeySet(unittest.TestCase):
     def test_init(self):
         a = sql.KeySet()
-        self.assertRaises(TypeError, sql.KeySet, '')
+        self.assertRaises(TypeError, sql.KeySet, ('',))
 
 
 class TestValueSet(unittest.TestCase):
     def test_init(self):
         a = sql.ValueSet()
-        self.assertRaises(TypeError, sql.ValueSet, '')
+        self.assertRaises(TypeError, sql.ValueSet, ('',))
 
 
 class TestList(unittest.TestCase):
     def test_init(self):
-        self.assertRaises(TypeError, sql.List, '')
+        self.assertRaises(TypeError, sql.List, ('',))
+        self.assertEqual(sql.List((sql.Str('a'),)), 'a')
+        self.assertEqual(sql.List((sql.Value(),)), 'NULL')
 
 
 class TestKeyList(unittest.TestCase):
     def test_init(self):
-        self.assertRaises(TypeError, sql.KeyList, '')
+        self.assertRaises(TypeError, sql.KeyList, ('',))
 
 
 class TestValueList(unittest.TestCase):
     def test_init(self):
-        self.assertRaises(TypeError, sql.ValueList, '')
+        self.assertRaises(TypeError, sql.ValueList, ('',))
 
 
 class TestSelectList(unittest.TestCase):
@@ -185,7 +187,7 @@ class TestSelectList(unittest.TestCase):
 
     def test_sql(self):
         self.assertEqual(sql.SelectList(), '*')
-        self.assertEqual(sql.SelectList('a', sql.Key('a')), 'a, `a`')
+        self.assertEqual(sql.SelectList(('a', sql.Key('a'))), 'a, `a`')
 
 
 class TestDict(unittest.TestCase):
@@ -207,10 +209,10 @@ class TestDict(unittest.TestCase):
 class TestListDict(unittest.TestCase):
     def test_init(self):
         ld = sql.ListDict()
-        self.assertRaises(TypeError, sql.ListDict, '')
+        self.assertRaises(TypeError, sql.ListDict, ('',))
 
     def test_sql(self):
-        self.assertEqual(sql.ListDict(('id', 1), ('name', 'dgf')), '( `id`, `name` ) values ( 1, "dgf" )')
+        self.assertEqual(sql.ListDict((('id', 1), ('name', 'dgf'))), '( `id`, `name` ) values ( 1, "dgf" )')
 
 
 class TestTREE(unittest.TestCase):
@@ -303,6 +305,15 @@ class TestLimit(unittest.TestCase):
         self.assertEqual(sql.Limit(1), '0, 1')
         self.assertEqual(sql.Limit(1, -2), '-2, 1')
 
+    def test_from(self):
+        self.assertEqual(sql.Limit.from_obj(1), '0, 1')
+        self.assertEqual(sql.Limit.from_obj((1,)), '0, 1')
+        self.assertEqual(sql.Limit.from_obj((1, 2)), '2, 1')
+        self.assertEqual(sql.Limit.from_obj(dict(t=1, s=2)), '2, 1')
+        self.assertEqual(sql.Limit.from_obj(dict(s=1)), '1, 0')
+        self.assertEqual(sql.Limit.from_obj(dict(other=1)), '0, 1')
+        self.assertEqual(sql.Limit.from_obj(dict(t=1)), '0, 1')
+
 
 class TestOrder(unittest.TestCase):
     def test_ORDER(self):
@@ -329,8 +340,9 @@ class TestOrder(unittest.TestCase):
         order._order = None
         self.assertFalse(order)
         # eq
-        self.assertEqual(sql.Order('id', True), '`id` desc')
-        self.assertEqual(sql.Order('id', None), '`id` asc')
+        self.assertEqual(sql.Order('id', True), 'id desc')
+        self.assertEqual(sql.Order('id', None), 'id asc')
+        self.assertEqual(sql.Order(sql.Key('id'), 'asc'), '`id` asc')
         # asc desc
         self.assertEqual(sql.OrderDesc('id'), sql.Order('id', sql.ORDER.DESC))
         self.assertEqual(sql.OrderAsc('id'), sql.Order('id', sql.ORDER.ASC))
@@ -342,9 +354,25 @@ class TestOrder(unittest.TestCase):
         # asc desc
         o.asc('id')
         self.assertTrue(o)
-        self.assertEqual(o, '`id` asc')
+        self.assertEqual(o, 'id asc')
         o.desc('name')
-        self.assertEqual(o, '`id` asc, `name` desc')
+        self.assertEqual(o, 'id asc, name desc')
+
+    def test_from(self):
+        self.assertEqual(sql.Order.from_obj('id'), 'id asc')
+        self.assertEqual(sql.Order.from_obj('id asc'), 'id asc')
+        self.assertEqual(sql.Order.from_obj(('id',)), 'id asc')
+        self.assertEqual(sql.Order.from_obj(('`id`', True)), '`id` desc')
+        self.assertRaises(ValueError, sql.Order.from_obj, dict(key='id'))
+        self.assertRaises(ValueError, sql.Order.from_obj, dict(o='id', b='f'))
+        self.assertEqual(sql.Order.from_obj(dict(key='asc')), 'key asc')
+        self.assertEqual(sql.Order.from_obj(dict(key=sql.Key('asc'), o='desc')), '`asc` desc')
+
+    def test_list_from(self):
+        self.assertEqual(sql.OrderList.from_obj(('id',)), 'id asc')
+        self.assertEqual(sql.OrderList.from_obj((('id',), ('id', 'desc'))), 'id asc, id desc')
+        self.assertEqual(sql.OrderList.from_obj('id desc , desc '), 'id desc, desc asc')
+        self.assertIn(sql.OrderList.from_obj(dict(a=0, b=1)), ('a asc, b desc', 'b desc, a asc'))
 
 
 class TestWhere(unittest.TestCase):
@@ -366,24 +394,39 @@ class TestWhere(unittest.TestCase):
         self.assertEqual(sql.WhereTrue(), '1')
         self.assertEqual(sql.WhereStr('abc'), 'abc')
 
-        self.assertEqual(sql.WhereEqual('id', None), '`id` is NULL')
-        self.assertEqual(sql.WhereNotEqual('id', None), '`id` is not NULL')
-        self.assertEqual(sql.WhereLess('id', None), '`id` < NULL')
-        self.assertEqual(sql.WhereLessEqual('id', sql.Str('')), '`id` <=')
-        self.assertEqual(sql.WhereGreater('id', sql.Value()), '`id` > NULL')
-        self.assertEqual(sql.WhereGreaterEqual('id', sql.Key('id')), '`id` >= `id`')
-        self.assertEqual(sql.WhereIn('id', 1, None, False, ''), '`id` in ( 1, NULL, False, "" )')
-        self.assertEqual(sql.WhereNotIn('id'), '`id` not in (  )')
-        self.assertEqual(sql.WhereBetween('id', '', None), '`id` between ""')
-        self.assertEqual(sql.WhereNotBetween('id', '', False), '`id` not between "" and False')
-        self.assertEqual(sql.WhereLike('id', ''), '`id` like ""')
+        self.assertEqual(sql.WhereEqual('id', None), 'id is NULL')
+        self.assertEqual(sql.WhereNotEqual('id', None), 'id is not NULL')
+        self.assertEqual(sql.WhereLess('id', None), 'id < NULL')
+        self.assertEqual(sql.WhereLessEqual('id', sql.Str('')), 'id <=')
+        self.assertEqual(sql.WhereGreater('id', sql.Value()), 'id > NULL')
+        self.assertEqual(sql.WhereGreaterEqual('id', sql.Key('id')), 'id >= `id`')
+        self.assertEqual(sql.WhereIn('id', (1, None, False, '')), 'id in ( 1, NULL, False, "" )')
+        self.assertEqual(sql.WhereNotIn('id', ()), 'id not in (  )')
+        self.assertEqual(sql.WhereBetween('id', '', None), 'id between ""')
+        self.assertEqual(sql.WhereNotBetween('id', '', False), 'id not between "" and False')
+        self.assertEqual(sql.WhereLike('id', ''), 'id like ""')
         self.assertRaises(TypeError, sql.WhereNotLike, 'id', 1)
-        self.assertEqual(sql.WhereNotLike('id', '%s'), '`id` not like "%s"')
+        self.assertEqual(sql.WhereNotLike('id', '%s'), 'id not like "%s"')
 
     def test_where_null(self):
         self.assertFalse(sql.WhereNull())
         self.assertEqual(sql.WhereNull(), '')
         self.assertEqual(sql.WhereNull().and_(sql.WhereStr('a=3')), 'a=3')
+
+    def test_from(self):
+        self.assertEqual(sql.Where.from_obj('a=1'), 'a=1')
+        self.assertEqual(sql.Where.from_obj(dict(a=3)), 'a = 3')
+        self.assertRaises(ValueError, sql.Where.from_obj, dict(a=3, v=4))
+        self.assertRaises(ValueError, sql.Where.from_obj, dict(k='3', op=4))
+        self.assertEqual(sql.Where.from_obj(dict(k='3', value=4)), '3 = 4')
+        self.assertEqual(sql.Where.from_obj(dict(k=sql.Key('a'), op='=', v='3')), '`a` = "3"')
+        self.assertEqual(sql.Where.from_obj(('a', 1)), 'a = 1')
+        self.assertEqual(sql.Where.from_obj(('a', (1, 2))), 'a in ( 1, 2 )')
+        self.assertEqual(sql.Where.from_obj(('!=', 'a', None)), 'a is not NULL')
+        self.assertEqual(sql.Where.from_obj(('!=', 'a')), '!= = "a"')
+        self.assertEqual(sql.Where.from_obj(('a', '>', None)), 'a > NULL')
+        self.assertEqual(sql.Where.from_obj(('a', 1, 2)), 'a in ( 1, 2 )')
+        self.assertEqual(sql.Where.from_obj((sql.Key('a'), 1, 2, 3, 4)), '`a` in ( 1, 2, 3, 4 )')
 
 
 class TestMethod(unittest.TestCase):
@@ -400,7 +443,7 @@ class TestMethod(unittest.TestCase):
         self.assertRaises(NotImplementedError, sql.Method('insert', 'table').to_sql)
 
     def test_insert(self):
-        a = sql.Insert('table', ('id', 1), ('name', 'dgf'))
+        a = sql.Insert('table', (('id', 1), ('name', 'dgf')))
         self.assertEqual(a, 'insert into `table` ( `id`, `name` ) values ( 1, "dgf" )')
 
     def test_delete(self):
@@ -412,12 +455,12 @@ class TestMethod(unittest.TestCase):
         self.assertEqual(a, 'delete from `table` where name = "dgf"')
 
     def test_update(self):
-        a = sql.Update('table')
+        a = sql.Update('table', ())
         self.assertFalse(a)
         self.assertEqual(a, '')
 
     def test_select(self):
-        a = sql.Select('table')
+        a = sql.Select('table', ())
         self.assertTrue(a)
         self.assertEqual(a, 'select * from `table`')
 

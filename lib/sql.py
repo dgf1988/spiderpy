@@ -167,77 +167,88 @@ class KeyValue(Node):
 
 
 class Set(Node, set):
-    def __init__(self, *nodes):
+    def __init__(self, nodes=()):
+        super().__init__()
         for node in nodes:
             if not isinstance(node, Node):
                 raise TypeError('node should be instance of Node')
-        super().__init__(nodes)
+            self.add(node)
 
     def to_sql(self):
         return ', '.join(node.to_sql() for node in self if isinstance(node, Node))
 
 
 class KeySet(Set):
-    def __init__(self, *keys):
+    def __init__(self, keys=()):
+        super().__init__()
         for key in keys:
             if not isinstance(key, Key):
                 raise TypeError('key should be instance of Key')
-        super().__init__(*keys)
+            self.add(key)
 
     def to_sql(self):
         return ', '.join(key.to_sql() for key in self if isinstance(key, Key))
 
 
 class ValueSet(Set):
-    def __init__(self, *values):
+    def __init__(self, values=()):
+        super().__init__()
         for value in values:
             if not isinstance(value, Value):
                 raise TypeError('value should be instance of Value')
-        super().__init__(*values)
+            self.add(value)
 
     def to_sql(self):
         return '( %s )' % ', '.join(value.to_sql() for value in self if isinstance(value, Value))
 
 
 class List(Node, list):
-    def __init__(self, *nodes):
+    def __init__(self, nodes=()):
+        super().__init__()
         for node in nodes:
             if not isinstance(node, Node):
                 raise TypeError('node should be instance of Node')
-        super().__init__(nodes)
+            self.append(node)
+        # self.extend(nodes)
 
     def to_sql(self):
         return ', '.join(node.to_sql() for node in self if isinstance(node, Node))
 
 
 class KeyList(List):
-    def __init__(self, *keys):
+    def __init__(self, keys=()):
+        super().__init__()
         for key in keys:
             if not isinstance(key, Key):
                 raise TypeError('key should be instance of Key')
-        super().__init__(*keys)
+            self.append(key)
 
     def to_sql(self):
         return '( %s )' % ', '.join(key.to_sql() for key in self if isinstance(key, Key))
 
 
 class ValueList(List):
-    def __init__(self, *values):
+    def __init__(self, values=()):
+        super().__init__()
         for value in values:
             if not isinstance(value, Value):
                 raise TypeError('value should be instance of value')
-        super().__init__(*values)
+            self.append(value)
 
     def to_sql(self):
         return '( %s )' % ', '.join(value.to_sql() for value in self if isinstance(value, Value))
 
 
 class SelectList(List):
-    def __init__(self, *selects):
+    def __init__(self, selects=()):
+        super().__init__()
         for select in selects:
-            if not isinstance(select, (str, Str, Key)):
+            if isinstance(select, (Str, Key)):
+                self.append(select)
+            elif isinstance(select, str):
+                self.append(Str(select))
+            else:
                 raise TypeError('select should be instance one of str Str Key')
-        super().__init__(*(Str(select) if isinstance(select, str) else select for select in selects))
 
     def to_sql(self):
         return '*' if not self \
@@ -246,8 +257,8 @@ class SelectList(List):
 
 
 class Dict(Node, dict):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
+    def __init__(self, kv_items=(), **kwargs):
+        super().__init__(kv_items, **kwargs)
 
     def keyvalues(self):
         return [KeyValue(k, self[k]) for k in self]
@@ -257,11 +268,15 @@ class Dict(Node, dict):
 
 
 class ListDict(Node, collections.OrderedDict):
-    def __init__(self, *kv_args):
-        for kv in kv_args:
-            if not isinstance(kv, KeyValue) and not isinstance(kv, (tuple, list)):
+    def __init__(self, kv_items=()):
+        super().__init__()
+        for kv in kv_items:
+            if isinstance(kv, KeyValue):
+                self[kv.key.key] = kv.value.value
+            elif isinstance(kv, (tuple, list)):
+                self[kv[0]] = kv[1]
+            else:
                 raise TypeError('not accept type in kv: %s' % type(kv))
-        super().__init__((kv.key.key, kv.value.value) if isinstance(kv, KeyValue) else kv for kv in kv_args)
 
     def keyvalues(self):
         return [KeyValue(k, self[k]) for k in self]
@@ -409,6 +424,33 @@ class Limit(Node):
     def to_sql(self):
         return '%s, %s' % (self.skip, self.take)
 
+    @classmethod
+    def from_tuple(cls, limit):
+        len_tuple = len(limit)
+        if len_tuple == 2:
+            return Limit(limit[0], limit[1])
+        elif len_tuple == 1:
+            return Limit(limit[0])
+
+    @classmethod
+    def from_dict(cls, limit: dict):
+        t = limit.get('take') or limit.get('Take') or limit.get('t') or 0
+        k = limit.get('skip') or limit.get('Skip') or limit.get('s') or 0
+        if len(limit) == 1 and not t and not k:
+            return cls.from_obj(limit.popitem()[1])
+        return cls(t, k)
+
+    @classmethod
+    def from_obj(cls, obj_limit):
+        if isinstance(obj_limit, Limit):
+            return obj_limit
+        elif isinstance(obj_limit, int):
+            return cls(obj_limit)
+        elif isinstance(obj_limit, (tuple, list)):
+            return cls.from_tuple(obj_limit)
+        elif isinstance(obj_limit, dict):
+            return cls.from_dict(obj_limit)
+
 
 @enum.unique
 class ORDER(Node, enum.IntEnum):
@@ -446,8 +488,10 @@ class ORDER(Node, enum.IntEnum):
 
 
 class Order(Node):
-    def __init__(self, key: str, order):
-        self._key = Key(key)
+    def __init__(self, key, order=None):
+        self._key = key if isinstance(key, Str) else Str(str(key)) if isinstance(key, str) else None
+        if not self.key:
+            raise ValueError('there is no key in the order')
         self._order = order if isinstance(order, ORDER) else ORDER.from_object(order)
 
     @property
@@ -476,42 +520,88 @@ class Order(Node):
     def to_sql(self):
         return '%s %s' % (self.key.to_sql(), self.order.to_sql())
 
+    @classmethod
+    def from_tuple(cls, tuple_order):
+        if len(tuple_order) == 1:
+            return cls(tuple_order[0], None)
+        if len(tuple_order) == 2:
+            k, o = tuple_order
+            return cls(k, o)
+
+    @classmethod
+    def from_str(cls, str_order: str):
+        _order_ = str_order.strip().split()
+        return cls.from_tuple(_order_)
+
+    @classmethod
+    def from_dict(cls, dict_order: dict):
+        if len(dict_order) == 1:
+            k, o = dict_order.popitem()
+            return cls(k, o)
+        k = dict_order.get('key') or dict_order.get('Key') or dict_order.get('k')
+        if not k:
+            raise ValueError('the key not found in the order object')
+        o = dict_order.get('order') or dict_order.get('Order') or dict_order.get('o')
+        if not o:
+            raise ValueError('the order not found in the order object')
+        return cls(k, o)
+
+    @classmethod
+    def from_obj(cls, obj_order):
+        if isinstance(obj_order, Order):
+            return obj_order
+        elif isinstance(obj_order, (tuple, list)):
+            return cls.from_tuple(obj_order)
+        elif isinstance(obj_order, str):
+            return cls.from_str(obj_order)
+        elif isinstance(obj_order, dict):
+            return cls.from_dict(obj_order)
+
 
 class OrderAsc(Order):
-    def __init__(self, key: str):
+    def __init__(self, key):
         super().__init__(key, ORDER.ASC)
 
 
 class OrderDesc(Order):
-    def __init__(self, key: str):
+    def __init__(self, key):
         super().__init__(key, ORDER.DESC)
 
 
 class OrderList(List):
-    def __init__(self, *orders):
-        super().__init__(*(o if isinstance(o, Order)
-                         else Order(o[0], o[1]) if isinstance(o, (tuple, list)) and len(o) == 2
-                         else Order(str(o), ORDER.ASC)
-                         for o in orders))
+    def __init__(self, orders=()):
+        super().__init__(Order.from_obj(_order_) for _order_ in orders)
 
     def add(self, order):
-        if isinstance(order, (tuple, list)) and len(order) == 2:
-            k, v = order
-            self.append(Order(k, v))
-        elif isinstance(order, Order):
-            self.append(order)
-        elif isinstance(order, str):
-            k, v = order.strip().split()
-            self.append(Order(k, v))
+        self.append(order)
         return self
 
-    def asc(self, key: str):
+    def asc(self, key):
         self.append(OrderAsc(key))
         return self
 
-    def desc(self, key: str):
+    def desc(self, key):
         self.append(OrderDesc(key))
         return self
+
+    @classmethod
+    def from_str(cls, str_order_items: str):
+        return cls(order_item for order_item in str_order_items.strip().split(',') if order_item)
+
+    @classmethod
+    def from_dict(cls, dict_order_items):
+        return cls((k, dict_order_items[k]) for k in dict_order_items)
+
+    @classmethod
+    def from_obj(cls, obj_order_items):
+        if isinstance(obj_order_items, OrderList):
+            return obj_order_items
+        elif isinstance(obj_order_items, (tuple, list)):
+            return cls(obj_order_items)
+        elif isinstance(obj_order_items, str):
+            return cls.from_str(obj_order_items)
+        elif isinstance(obj_order_items, dict):
+            return cls.from_dict(obj_order_items)
 
 
 @enum.unique
@@ -555,7 +645,7 @@ class WHERE(Node, enum.IntEnum):
 class Where(Tree):
     def __init__(self, operation, left, right):
         super().__init__(operation if isinstance(operation, Node)
-                         else WHERE.from_str(operation) if isinstance(operation, str) else Str(str(operation)),
+                         else WHERE.from_str(operation) if isinstance(operation, str) else None,
                          left if isinstance(left, Node) else Str(left) if isinstance(left, str) else None,
                          right if isinstance(right, Node) else Value(right))
 
@@ -574,28 +664,63 @@ class Where(Tree):
         return ' '.join(sql for sql in (self.left.to_sql(), self.operation.to_sql(), self.right.to_sql()) if sql)
 
     @classmethod
-    def from_obj(cls, obj_where):
-        if isinstance(obj_where, str):
-            return WhereStr(obj_where)
-        if isinstance(obj_where, Node):
-            return obj_where
-        if isinstance(obj_where, (tuple, list)):
-            len_obj = len(obj_where)
-            if len_obj == 2:
-                k, v = obj_where
-                return WhereEqual(k, v)
-            if len_obj == 3:
-                op, k, v = obj_where
-                w = WhereNull()
-                try:
-                    w = Where(op, k, v)
-                except TypeError:
-                    k, op, v = obj_where
-                    try:
-                        w = Where(op, k, v)
-                    except TypeError:
-                        return w
+    def from_str(cls, where: str):
+        return WhereStr(where)
+
+    @classmethod
+    def from_dict(cls, where: dict):
+        if len(where) == 1:
+            k, v = where.popitem()
+            return WhereEqual(k, v)
+        k = where.get('key') or where.get('Key') or where.get('k')
+        if not k:
+            raise ValueError('the key not in the where object')
+        v = where.get('value') or where.get('Value') or where.get('v')
+        if not v:
+            raise ValueError('the value not in the where object')
+        op = where.get('operation') or where.get('Operation') or where.get('op')
+        if not op:
+            op = WHERE.EQUAL
+            if isinstance(v, (tuple, list)):
+                return WhereIn(k, v)
+        return Where(op, k, v)
+
+    @classmethod
+    def from_tuple(cls, where: tuple):
+        len_tuple = len(where)
+        if len_tuple == 1:
+            return cls.from_str(where[0])
+        elif len_tuple == 2:
+            if isinstance(where[1], (tuple, list)):
+                return WhereIn(where[0], where[1])
+            return WhereEqual(where[0], where[1])
+        elif len_tuple == 3:
+            try:
+                op, k, v = where
+                w = Where(op, k, v)
                 return w
+            except TypeError:
+                try:
+                    k, op, v = where
+                    w = Where(op, k, v)
+                    if w.operation not in (WHERE.IN, WHERE.NOT_IN, WHERE.BETWEEN, WHERE.NOT_BETWEEN):
+                        return w
+                except TypeError:
+                    pass
+        k = where[0]
+        vs = where[1:]
+        return WhereIn(k, vs)
+
+    @classmethod
+    def from_obj(cls, where):
+        if isinstance(where, Tree):
+            return where
+        elif isinstance(where, str):
+            return cls.from_str(where)
+        elif isinstance(where, (tuple, list)):
+            return cls.from_tuple(where)
+        elif isinstance(where, dict):
+            return cls.from_dict(where)
 
 
 class WhereNull(Where):
@@ -614,8 +739,8 @@ class WhereStr(Where):
 
 
 class WhereExpression(Where):
-    def __init__(self, operation, key: str, value):
-        super().__init__(operation, Key(key), value if isinstance(value, Node) else Value(value))
+    def __init__(self, operation, key, value):
+        super().__init__(operation, key, value if isinstance(value, Node) else Value(value))
 
 
 class WhereEqual(WhereExpression):
@@ -649,15 +774,15 @@ class WhereGreaterEqual(WhereExpression):
 
 
 class WhereIn(WhereExpression):
-    def __init__(self, key: str, *values):
+    def __init__(self, key: str, values):
         super().__init__(WHERE.IN, key,
-                         ValueList(*(value if isinstance(value, Value) else Value(value) for value in values)))
+                         ValueList(value if isinstance(value, Value) else Value(value) for value in values))
 
 
 class WhereNotIn(WhereExpression):
-    def __init__(self, key: str, *values):
+    def __init__(self, key: str, values):
         super().__init__(WHERE.NOT_IN, key,
-                         ValueList(*(value if isinstance(value, Value) else Value(value) for value in values)))
+                         ValueList(value if isinstance(value, Value) else Value(value) for value in values))
 
 
 class WhereBetween(WhereExpression):
@@ -737,9 +862,9 @@ class Method(Node):
 
 
 class Insert(Method):
-    def __init__(self, table: str, *to_insert):
+    def __init__(self, table: str, to_insert):
         super().__init__(METHOD.INSERT, table)
-        self._to_insert = ListDict(*to_insert)
+        self._to_insert = ListDict(to_insert)
 
     @property
     def datas(self):
@@ -781,10 +906,9 @@ class Delete(Method):
 
 
 class Update(Method):
-    def __init__(self, table: str, *to_update, **kwargs):
+    def __init__(self, table: str, to_update, **kwargs):
         super().__init__(METHOD.UPDATE, table)
-        self._to_update = Dict(**{k if not isinstance(k, Key) else k.key: v if not isinstance(v, Value) else v.value
-                                  for k, v in to_update})
+        self._to_update = Dict(to_update)
         self._where = kwargs.get('where', WhereNull())
 
     @property
@@ -809,9 +933,9 @@ class Update(Method):
 
 
 class Select(Method):
-    def __init__(self, table: str, *to_select, **kwargs):
+    def __init__(self, table: str, to_select=(), **kwargs):
         super().__init__(METHOD.SELECT, table)
-        self._select = SelectList(*to_select)
+        self._select = SelectList(to_select)
         self._where = kwargs.get('where', WhereNull())
         self._order = kwargs.get('order', OrderList())
         self._limit = kwargs.get('limit', Limit())
@@ -878,35 +1002,39 @@ class From(object):
                 limit=Limit())
 
     def where(self, where):
-        self.node['where'] = where if isinstance(where, Node) else WhereStr(where)
+        self.node['where'] = Where.from_obj(where)
         return self
 
     def or_where(self, where):
         if not self.node['where']:
             return self.where(where)
-        self.node['where'] = Or(self.node['where'], where if isinstance(where, Node) else WhereStr(where))
+        self.node['where'] = Or(self.node['where'], Where.from_obj(where))
         return self
 
     def and_where(self, where):
         if not self.node['where']:
             return self.where(where)
-        self.node['where'] = And(self.node['where'], where if isinstance(where, Node) else WhereStr(where))
+        self.node['where'] = And(self.node['where'], Where.from_obj(where))
         return self
 
-    def order(self, *args):
-        self.node['order'] = OrderList(*args)
+    def order(self, args):
+        self.node['order'] = OrderList.from_obj(args)
         return self
 
     def add_order(self, order):
-        self.node['order'].add(order)
+        self.node['order'].add(Order.from_obj(order))
         return self
 
-    def order_asc(self, key: str):
+    def order_asc(self, key):
         self.node['order'].asc(OrderAsc(key))
         return self
 
-    def order_desc(self, key: str):
+    def order_desc(self, key):
         self.node['order'].asc(OrderDesc(key))
+        return self
+
+    def limit(self, limit):
+        self.node['limit'] = Limit.from_obj(limit)
         return self
 
     def take(self, take: int):
@@ -917,22 +1045,25 @@ class From(object):
         self.node['limit'].skip = skip
         return self
 
-    def insert(self, *to_insert):
-        return Insert(self.node.get('table'), *to_insert)
+    def insert(self, to_insert):
+        return Insert(self.node.get('table'), to_insert)
 
     def delete(self):
         return Delete(self.node.get('table'), where=self.node.get('where'))
 
-    def update(self, *to_update):
-        return Update(self.node.get('table'), *to_update, where=self.node.get('where'))
+    def update(self, to_update):
+        return Update(self.node.get('table'), to_update, where=self.node.get('where'))
 
-    def select(self, *selection):
+    def select(self, select_items):
         return Select(self.node.get('table'),
-                      *selection,
+                      select_items,
                       where=self.node.get('where'),
                       order=self.node.get('order'),
                       limit=self.node.get('limit'))
 
 
 if __name__ == '__main__':
-    pass
+    l = List((Str('a'), Value(1)))
+    print(l)
+    l = SelectList(('a', 'b'))
+    print(l)

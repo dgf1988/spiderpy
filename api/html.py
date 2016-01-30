@@ -10,16 +10,8 @@ import lib.url
 import lib.orm
 
 
-__all__ = ['Html', 'db',
+__all__ = ['Html',
            'get', 'load', 'update', 'delete']
-
-
-PathRoot = 'd:/HtmlStor/'
-DbConfig = dict(
-    user='root',
-    passwd='guofeng001',
-    database='html'
-)
 
 
 @lib.orm.table('html', fields='id html_url html_code html_encoding html_update',
@@ -31,18 +23,93 @@ class Html(lib.orm.Table):
     html_encoding = lib.orm.CharField(default='utf-8', nullable=True)
     html_update = lib.orm.DatetimeField(current_timestamp=True, on_update=True)
 
+    Config = dict(
+        path_root='d:/HtmlStor/',
+        db_user='root',
+        db_passwd='guofeng001',
+        db_name='html',
+        db_host='localhost',
+        db_port=3306,
+        db_charset='utf8'
+    )
+    Db = None
+
     def __init__(self, html_url, **kwargs):
         super().__init__(html_url=html_url, **kwargs)
+        if not self.Db or not self.Db.is_open():
+            raise RuntimeError('the html db is not connecting')
         self['html_url'] = lib.url.parse(self['html_url']).str_url()
         self.urlmd5 = hashlib.md5(self['html_url'].encode()).hexdigest()
         self.text = ''
 
-    def http_get(self, timeout=30, encoding=''):
+    def http_get(self, timeout=30, encoding='', allow_httpcode=(200,)):
         response = requests.get(self['html_url'], timeout=timeout)
-        response.encoding = encoding or self['html_encoding'] or response.encoding or 'utf-8'
-        self['html_encoding'] = response.encoding
-        self['html_code'], self.text = response.status_code, response.text
-        return self['html_code']
+        if response.status_code in allow_httpcode:
+            response.encoding = encoding or self['html_encoding'] or response.encoding
+            self['html_encoding'] = response.encoding
+            self['html_code'], self.text = response.status_code, response.text
+            return self['html_code']
+
+    @classmethod
+    def db_reset(cls, **kwargs):
+        # 重置
+        if cls.Db and cls.Db.is_open():
+            cls.Db.close()
+        cls.Db = Db(
+                kwargs.get('user') or cls.Config.get('db_user'),
+                kwargs.get('passwd') or cls.Config.get('db_passwd'),
+                kwargs.get('db') or kwargs.get('database') or kwargs.get('name') or cls.Config.get('db_name'),
+                kwargs.get('host') or cls.Config.get('db_host'),
+                kwargs.get('port') or cls.Config.get('db_port'),
+                kwargs.get('charset') or cls.Config.get('db_charset')
+        )
+        return bool(cls.Db)
+
+    @classmethod
+    def db_restart(cls):
+        # 重连
+        if cls.Db.is_open():
+            cls.Db.close()
+        cls.Db.open()
+        return cls.Db.is_open()
+
+    @classmethod
+    def db_open(cls):
+        return cls.Db.open()
+
+    @classmethod
+    def db_close(cls):
+        return cls.Db.close()
+
+    def db_get(self):
+        # 从数据库提取
+        if self.has_primarykey():
+            return self.from_entity(self.Db.html.get(self.get_primarykey()))
+
+    def db_load(self):
+        # 从数据库加载
+        if self['html_url']:
+            return self.from_entity(self.Db.html.get(html_url=self['html_url']))
+
+    def db_save(self):
+        # 保存到数据库
+        if self['html_url'] and not self.has_primarykey():
+            return self.Db.html.save(self) and self.db_load()
+
+    def db_update(self):
+        # 更新到数据库
+        if self.has_primarykey():
+            return self.Db.html.update(self) and self.db_get()
+
+    def db_delete(self):
+        if self.has_primarykey():
+            return self.Db.html.delete(self)
+
+    def from_entity(self, entity):
+        if entity.has_primarykey():
+            for k in entity:
+                self[k] = entity[k]
+            return entity.get_primarykey()
 
     def get_title(self):
         if self.text:
@@ -50,115 +117,106 @@ class Html(lib.orm.Table):
             if search:
                 return search.group('title')
 
-    def get_filepath(self):
+    def get_filename(self):
         url = lib.url.parse(self['html_url'])
         urlpath = url.path
         urlhost = url.host
         if urlpath == '/' or urlpath == '':
-            return PathRoot + urlhost + '/' + self.urlmd5[0:2]
+            filepath = self.Config.get('path_root') + urlhost + '/' + self.urlmd5[0:2]
         else:
-            return PathRoot + urlhost + '%s/' % urlpath + self.urlmd5[0:2]
+            filepath = self.Config.get('path_root') + urlhost + '%s/' % urlpath + self.urlmd5[0:2]
+        return filepath, filepath+'/'+self.urlmd5[2:]+'.html'
 
-    def get_filename(self):
-        return self.urlmd5[2:]+'.html'
+    def file_save(self):
+        if self.text:
+            path, filename = self.get_filename()
+            if not os.path.exists(path):
+                os.makedirs(path)
+            with open(filename, 'w', encoding=self['html_encoding']) as f:
+                f.write(self.text)
+                return True
+
+    def file_load(self):
+        if self['html_url']:
+            path, filename = self.get_filename()
+            if os.path.exists(filename) and os.path.isfile(filename):
+                with open(filename, 'r', encoding=self['html_encoding']) as f:
+                    self.text = f.read()
+                    return True
+
+    def file_delete(self):
+        path, filename = self.get_filename()
+        if path and filename:
+            # 删除文件
+            if os.path.exists(filename) and os.path.isfile(filename):
+                os.remove(filename)
+            # 删除文件夹
+            try:
+                os.removedirs(path)
+            except FileNotFoundError as e:
+                pass
+            except IOError as e:
+                pass
+            # 返回文件名
+            finally:
+                return filename
 
     def save(self):
-        path = self.get_filepath()
-        savename = path+'/'+self.get_filename()
-        if not os.path.exists(path):
-            os.makedirs(path)
-        with open(savename, 'w', encoding=self['html_encoding']) as fsave:
-            fsave.write(self.text)
-            if not self.has_primarykey():
-                _get_ = db.html.get(html_url=self['html_url'])
-                if _get_:
-                    self.set_primarykey(_get_.get_primarykey())
-            _update_key_ = db.html.save(self) or self.get_primarykey()
-            self.update(db.html.get(_update_key_).items())
-            return self.get_primarykey()
+        return self.file_save() and (self.db_save() or self.db_update())
 
     def load(self):
-        _path_ = self.get_filepath()
-        _loadname_ = _path_+'/'+self.get_filename()
-        if os.path.exists(_path_) and os.path.isfile(_loadname_):
-            with open(_loadname_, 'r', encoding=self['html_encoding']) as fload:
-                self.text = fload.read()
-                _entity_html_ = db.html.get(html_url=self['html_url'])
-                if _entity_html_:
-                    self.update(_entity_html_.items())
-                    return True
-        return False
-
-    def http_update(self, timeout=30, encoding='', allow_httpcode=(200,)):
-        _entity_ = db.html.get(html_url=self['html_url'])
-        if _entity_:
-            self.set_primarykey(_entity_.get_primarykey())
-            self['html_encoding'] = encoding or self['html_encoding'] or _entity_['html_encoding']
-            if self.http_get(timeout) in allow_httpcode:
-                return self.save()
+        return self.file_load() and self.db_load()
 
     def delete(self):
-        _path_ = self.get_filepath()
-        _delete_name_ = _path_+'/'+self.get_filename()
-        if os.path.exists(_delete_name_) and os.path.isfile(_delete_name_):
-            os.remove(_delete_name_)
-        try:
-            os.removedirs(_path_)
-        except FileNotFoundError as _e_:
-            logging.warning(_e_.__str__())
-        except OSError as _e_:
-            logging.warning(_e_.__str__())
-        finally:
-            if self.has_primarykey():
-                db.html.delete(self)
-            elif self['html_url']:
-                _entity_ = db.html.get(html_url=self['html_url'])
-                if _entity_ and _entity_.has_primarykey():
-                    db.html.delete(_entity_)
+        return self.file_delete() and (self.db_delete() or (self.db_load() and self.db_delete()))
+
+    def to_bs4(self):
+        pass
 
 
 class Db(lib.orm.Db):
-    def __init__(self):
-        super().__init__(lib.orm.Mysql(user=DbConfig['user'], passwd=DbConfig['passwd'], db=DbConfig['database']))
+    def __init__(self, user, passwd, name_db, host, port, charset):
+        super().__init__(lib.orm.Mysql(user, passwd, name_db, host, port, charset))
         self.html = self.table_set(Html)
 
 
-db = Db()
+Html.Db = Db(Html.Config.get('db_user'),
+             Html.Config.get('db_passwd'),
+             Html.Config.get('db_name'),
+             Html.Config.get('db_host'),
+             Html.Config.get('db_port'),
+             Html.Config.get('db_charset'))
 
 
-def get(html_url, timeout=30, encoding=''):
-    _html_ = Html(html_url=html_url)
-    _html_.http_get(timeout, encoding)
+def get(html_url, timeout=30, encoding='', allow_httpcode=(200,)):
+    _html_ = Html(html_url)
+    _html_.http_get(timeout, encoding, allow_httpcode)
     return _html_
 
 
 def load(html_url):
-    _html_ = Html(html_url=html_url)
+    _html_ = Html(html_url)
     _html_.load()
     return _html_
 
 
 def update(html_url, timeout=30, encoding='', allow_httpcode=(200,)):
-    _html_ = Html(html_url=html_url)
-    _html_.http_update(timeout, encoding, allow_httpcode)
+    _html_ = Html(html_url)
+    _html_.http_get(timeout, encoding, allow_httpcode)
+    _html_.save()
     return _html_
 
 
 def delete(html_url):
-    Html(html_url=html_url).delete()
+    return Html(html_url).delete()
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.WARNING)
-    list_postid = (1741, 1738, 1727, 1723)
-    list_posturl = ['http://www.dingguofeng.com/?p=%s' % postid for postid in list_postid]
-    db.open()
 
-    h = Html('http')
-    print(h['html_url'], h.urlmd5, bool(h))
-    h.text = '1'
-    h['html_code'] = 1
-    h['html_encoding'] = '3'
-    print(bool(h), h['html_encoding'])
+    Html.Db.config.update(db='html')
+    with Html.Db as db:
+        for tableset in db:
+            for item in tableset:
+                print(item)
 
-    db.close()

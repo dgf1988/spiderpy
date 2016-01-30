@@ -12,8 +12,8 @@ class Player(object):
         self.id = id_player
         if not id_player or not isinstance(id_player, int):
             raise ValueError('playerid %s not accept' % id_player)
-        self.url = PlayerUrl(self.id)
-        self.html = PlayerHtml(self.url.url)
+        self.url = PlayerUrl(self.id).url
+        self.html = PlayerHtml(self.url)
         self.player = PlayerTable()
         self.data = collections.OrderedDict((
             ('id', None),
@@ -175,19 +175,12 @@ class Player(object):
 
 
 class Hoetom(object):
-    def __init__(self):
-        pass
-
-    def __enter__(self):
-        DbHtml.open()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        DbHtml.close()
+    pass
 
 
 if __name__ == '__main__':
-    DbHtml.open()
+    import api.html
+    api.html.Html.db_open()
     with Db() as db:
         for pid in db.playerid:
             p = Player(db, pid['playerid'])
@@ -196,9 +189,8 @@ if __name__ == '__main__':
                 p.get()
             print(p.html)
             print(p.player)
-            foreigns = db.get_many_bykey(*p.player.foreign_items())
-            for k, v in foreigns:
-                print(k, '=>', v)
+            fs = dict(db.foreign_items(p.player))
+            print(fs)
             print('+++++++++++++++++++++++++')
-    DbHtml.close()
+    api.html.Html.db_close()
 

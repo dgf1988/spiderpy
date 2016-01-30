@@ -5,8 +5,5 @@ import datetime
 import api.html
 
 
-DbHtml = api.html.db
-
-
 class PlayerHtml(api.html.Html):
     pass

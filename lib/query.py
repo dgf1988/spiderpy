@@ -3,8 +3,7 @@ import lib.db
 import lib.mapping
 import lib.sql
 
-
-__all__ = ['TableSet', 'Db']
+__all__ = ['TableSet', 'Db', 'QuerySet']
 
 
 class EntitySet(object):
@@ -16,8 +15,8 @@ class EntitySet(object):
 
     def save(self):
         if self.entity.has_primarykey():
-            return self.update()
-        save_sql = lib.sql.From(self.entity.get_table_name())\
+            return None
+        save_sql = lib.sql.From(self.entity.get_table_name()) \
             .insert(*self.entity.data_items(lambda x: x is not None))
         return self.db.insert_id() if self.db.execute(save_sql.to_sql()) else None
 
@@ -26,15 +25,15 @@ class EntitySet(object):
             return None
         primarykey = self.entity.get_primarykey()
         [self.entity.set(k, kwargs[k]) for k in kwargs if k in self.entity.data_keys()]
-        update_sql = lib.sql.From(self.entity.get_table_name())\
-            .where(lib.sql.WhereEqual(self.entity.get_table_primarykey(), primarykey))\
+        update_sql = lib.sql.From(self.entity.get_table_name()) \
+            .where(lib.sql.WhereEqual(self.entity.get_table_primarykey(), primarykey)) \
             .update(*self.entity.data_items())
         return self.entity.get_primarykey() if self.db.execute(update_sql.to_sql()) else None
 
     def delete(self):
         if self.entity.has_primarykey():
-            delete_sql = lib.sql.From(self.entity.get_table_name())\
-                .where(lib.sql.WhereEqual(self.entity.get_table_primarykey(), self.entity.get_primarykey()))\
+            delete_sql = lib.sql.From(self.entity.get_table_name()) \
+                .where(lib.sql.WhereEqual(self.entity.get_table_primarykey(), self.entity.get_primarykey())) \
                 .delete()
             return self.db.execute(delete_sql.to_sql())
 
@@ -148,8 +147,8 @@ class TableSet(object):
         return query[0]['num'] if query else None
 
     def __iter__(self):
-        iter_keys_sql = lib.sql.From(self.table.get_table_name())\
-            .order(lib.sql.Order(self.table.get_table_primarykey(), 'asc'))\
+        iter_keys_sql = lib.sql.From(self.table.get_table_name()) \
+            .order(lib.sql.Order(self.table.get_table_primarykey(), 'asc')) \
             .select(self.table.get_table_primarykey())
         query = self.db.query(iter_keys_sql.to_sql())
         if query:
@@ -157,18 +156,104 @@ class TableSet(object):
                 yield self.get(k)
 
 
-class Db(object):
+class API_Db_Query(object):
+    def add(self, entity):
+        raise NotImplementedError()
 
+    def save(self, entity):
+        raise NotImplementedError()
+
+    def remove(self, entity):
+        raise NotImplementedError()
+
+    def get(self, primarykey=None, **kwargs):
+        """
+
+        :param primarykey:
+        :param kwargs: wheres
+        :return:
+        """
+        raise NotImplementedError()
+
+    def find(self, selects=(), **kwargs):
+        """
+
+        :param selects:
+        :param kwargs: wheres
+        :return:
+        """
+        raise NotImplementedError()
+
+    def query(self, selects=(), **kwargs):
+        """
+
+        :param selects:
+        :param kwargs: dict(where=dict(), order='', limit=(0, 0) )
+        :return:
+        """
+        raise NotImplementedError()
+
+    def count(self, **kwargs):
+        raise NotImplementedError()
+
+    def __iter__(self):
+        raise NotImplementedError()
+
+
+class QuerySet(object):
+    def __init__(self, db, model):
+        self.db = db
+        self.model = model
+
+    def add(self, entity):
+        pass
+
+    def update(self, entity):
+        pass
+
+    def get(self, primarykey=None, **kwargs):
+        query = self.db.query(self.model.get_sql_query(where={self.model.get_model_primarykey(): primarykey})) \
+            if primarykey else self.db.query(self.model.get_sql_query(where=kwargs)) if kwargs else None
+        if query:
+            return self.model(**query[0])
+
+    def find(self, selects=(), **kwargs):
+        query = self.db.query(self.model.get_sql_query(selects, where=kwargs))
+        if query:
+            if not selects:
+                return [self.model(**row) for row in query]
+            else:
+                return query
+
+    def query(self, selects=(), **kwargs):
+        query = self.db.query(self.model.get_sql_query(selects, **kwargs))
+        if query:
+            if not selects:
+                return [self.model(**row) for row in query]
+            else:
+                return query
+
+    def count(self, **kwargs):
+        query = self.db.query(self.model.get_sql_query(('count(*) as num',), where=kwargs))
+        if query:
+            return query[0]['num']
+
+
+class Db(object):
     __slots__ = ('db',)
 
     def __init__(self, db):
         self.db = db
 
+    def __bool__(self):
+        return bool(self.db)
+
     def __str__(self):
         return '<%s: %s>' % (self.__class__.__name__, self.db)
 
-    def __bool__(self):
-        return bool(self.db) and isinstance(self.db, lib.db.Mysql)
+    @property
+    def config(self):
+        return self.db.config
 
     def is_open(self):
         return self.db.is_open()
@@ -185,9 +270,6 @@ class Db(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.db.close()
-
-    def get_config(self):
-        return getattr(self.db, '_config')
 
     def get_tables(self, name_db=''):
         return self.db.get_tables(name_db)
@@ -209,11 +291,8 @@ class Db(object):
     def get(self, table, primarykey):
         return TableSet(self.db, table).get(primarykey)
 
-    def get_many_bykey(self, *items, **kwitems):
-        if items:
-            return [(k, self.get(t, pk)) for k, t, pk in items]
-        if kwitems:
-            return {k: self.get(kwitems[k][0], kwitems[k][1]) for k in kwitems if len(kwitems[k]) == 2}
+    def foreign_items(self, entity):
+        return [(k, self.get(entity.get_table_foreigns(k), entity.get(k))) for k in entity.get_table_foreigns()]
 
     def __getattr__(self, table_name):
         tables = self.get_tables()
@@ -222,8 +301,9 @@ class Db(object):
         return super().__getattribute__(table_name)
 
     def __iter__(self):
-        for key, table in self.get_tables().items():
-            yield TableSet(self.db, table)
+        for _key_ in self.__dict__:
+            if isinstance(self.__dict__.get(_key_), TableSet):
+                yield self.__dict__.get(_key_)
 
 
 @lib.mapping.table('html', fields='id html_url html_code html_encoding html_update',

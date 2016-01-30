@@ -6,7 +6,47 @@ import pymysql
 __all__ = ['Mysql']
 
 
-class Mysql(object):
+class ApiDatabase(object):
+
+    @property
+    def config(self):
+        raise NotImplementedError()
+
+    @property
+    def name(self):
+        raise NotImplementedError()
+
+    @name.setter
+    def name(self, database):
+        raise NotImplementedError()
+
+    def is_open(self):
+        raise NotImplementedError()
+
+    def open(self):
+        raise NotImplementedError()
+
+    def close(self):
+        raise NotImplementedError()
+
+    def query(self, sql):
+        raise NotImplementedError()
+
+    def execute(self, sql):
+        raise NotImplementedError()
+
+    def insert_id(self):
+        raise NotImplementedError()
+
+    def __enter__(self):
+        self.open()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.close()
+
+
+class Mysql(ApiDatabase):
     def __init__(self, user='', passwd='', db='', host='localhost', port=3306, charset='utf8', autocommit=True):
         self._config = dict(
             user=user,
@@ -22,6 +62,10 @@ class Mysql(object):
         self._cursor = None
 
     @property
+    def config(self):
+        return self._config
+
+    @property
     def name(self):
         return self._config['db']
 
@@ -34,25 +78,16 @@ class Mysql(object):
             return False
         return self._connection.open
 
-    def __bool__(self):
-        return self.is_open()
-
     def open(self):
         self._connection = pymysql.connect(**self._config)
         if self.is_open():
             self._cursor = self._connection.cursor()
             return self
 
-    def __enter__(self):
-        return self.open()
-
     def close(self):
         if self.is_open():
             self._cursor.close()
             self._connection.close()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return self.close()
 
     def set_db(self, str_db: str):
         self._config['db'] = str_db

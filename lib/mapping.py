@@ -3,10 +3,12 @@ import enum
 import datetime
 import collections
 
+import lib.sql
+
 
 __all__ = ['IntField', 'AutoIntField', 'CharField', 'VarcharField', 'TextField',
            'DateField', 'TimeField', 'YearField', 'DatetimeField', 'TimestampField',
-           'COLLATE', 'ENGINE', 'MAPPING', 'Table', 'table']
+           'COLLATE', 'ENGINE', 'MAPPING', 'Table', 'table', 'Model', 'model']
 
 
 def _convert_value_to_sql(value):
@@ -17,11 +19,11 @@ def _convert_value_to_sql(value):
     return str(value)
 
 
-class COLLATE(enum.IntEnum):
+class COLLATE(enum.Enum):
     utf8_general_ci = 1
 
 
-class ENGINE(enum.IntEnum):
+class ENGINE(enum.Enum):
     InnoDB = 1
 
 
@@ -148,6 +150,272 @@ class TimestampField(Field):
                          current_timestamp=current_timestamp, on_update=on_update)
 
 
+class Model(collections.OrderedDict):
+    _name_ = ''
+    _fields_ = collections.OrderedDict()
+    _primarys_ = []
+    _uniques_ = dict()
+    _foreigns_ = dict()
+    _collate_ = COLLATE.utf8_general_ci
+    _engine_ = ENGINE.InnoDB
+
+    def __new__(cls, *args, **kwargs):
+        obj = super().__new__(cls)
+        for k in cls.get_model_fields():
+            obj[k] = None
+        return obj
+
+    def __setitem__(self, key, value):
+        if key in self.get_model_fields() and self.get_model_fields(key).allow(value):
+            return super().__setitem__(key, value)
+
+    def __str__(self):
+        return '<%s: %s>' % (self.get_model_name(),
+                             '[%s]' % ','.join('(\'%s\', %s)' % (k, self[k]) for k in self.get_model_fields()))
+
+    def __repr__(self):
+        return '<%s: %s>' % (self.get_model_name(),
+                             '[%s]' % ','.join('(\'%s\', %s)' % (k, self[k]) for k in self.get_model_fields()))
+
+    def set(self, key, value):
+        self[key] = value
+
+    def auto_keys(self, filter_call=None):
+        if not filter_call:
+            return [k for k in self if self.get_model_fields(k).is_auto()]
+        return [k for k in self if self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def auto_values(self, filter_call=None):
+        if not filter_call:
+            return [self[k] for k in self if self.get_model_fields(k).is_auto()]
+        return [self[k] for k in self if self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def auto_items(self, filter_call=None):
+        if not filter_call:
+            return [(k, self[k]) for k in self if self.get_model_fields(k).is_auto()]
+        return [(k, self[k]) for k in self if self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def data_keys(self, filter_call=None):
+        if not filter_call:
+            return [k for k in self if not self.get_model_fields(k).is_auto()]
+        return [k for k in self if not self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def data_values(self, filter_call=None):
+        if not filter_call:
+            return [self[k] for k in self if not self.get_model_fields(k).is_auto()]
+        return [self[k] for k in self if not self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def data_items(self, filter_call=None):
+        if not filter_call:
+            return [(k, self[k]) for k in self if not self.get_model_fields(k).is_auto()]
+        return [(k, self[k]) for k in self if not self.get_model_fields(k).is_auto() and filter_call(self[k])]
+
+    def has_primarykey(self):
+        return bool(self[self.get_model_primarykey()])
+
+    def get_primarykey(self):
+        return self[self.get_model_primarykey()]
+
+    def set_primarykey(self, value):
+        self[self.get_model_primarykey()] = value
+
+    def get_sql_insert(self):
+        return lib.sql.From(self.get_model_name()).insert(self.data_items(lambda x: x is not None)).to_sql()
+
+    def get_sql_update(self):
+        return lib.sql.From(self.get_model_name()).where((self.get_model_primarykey(), self.get_primarykey()))\
+            .update(self.data_items(lambda x: x is not None)).to_sql()
+
+    def get_sql_delete(self):
+        return lib.sql.From(self.get_model_name()).where((self.get_model_primarykey(), self.get_primarykey()))\
+            .delete().to_sql()
+
+    @classmethod
+    def get_sql_find(cls, primrykey=None, **kwargs):
+        if primrykey:
+            return lib.sql.From(cls.get_model_name()).where((cls.get_model_primarykey(), primrykey))\
+                .select(cls.get_model_fields().keys()).to_sql()
+        if kwargs:
+            sql_from = lib.sql.From(cls.get_model_name())
+            for k in kwargs:
+                sql_from.and_where((k, kwargs[k]))
+            return sql_from.select(cls.get_model_fields().keys()).to_sql()
+
+    @classmethod
+    def get_sql_query(cls, selects=(), **kwargs):
+        sql_from = lib.sql.From(cls.get_model_name())
+        wheres = kwargs.get('where') or []
+        if isinstance(wheres, (tuple, list)):
+            for where in wheres:
+                sql_from.and_where(where)
+        elif isinstance(wheres, (dict, collections.OrderedDict)):
+            for k in wheres:
+                sql_from.and_where((k, wheres[k]))
+        elif isinstance(wheres, str):
+            sql_from.where(wheres)
+
+        sql_from.order(kwargs.get('order') or [])
+
+        limit = kwargs.get('limit') or 0
+        sql_from.limit(limit)
+        return sql_from.select(selects).to_sql()
+
+    @classmethod
+    def get_model_name(cls):
+        return cls._name_
+
+    @classmethod
+    def set_model_name(cls, name):
+        cls._name_ = name
+
+    @classmethod
+    def get_model_fields(cls, key=''):
+        if key:
+            return cls._fields_[key]
+        return cls._fields_
+
+    @classmethod
+    def set_model_fields(cls, *kv_items):
+        cls._fields_ = collections.OrderedDict(kv_items)
+
+    @classmethod
+    def get_model_primarykey(cls):
+        if cls._primarys_:
+            return cls._primarys_[0]
+        cls._primarys_ = [k for k in cls._fields_ if isinstance(cls._fields_[k], AutoIntField)]
+        if not cls._primarys_:
+            cls._primarys_ = [k for k in cls._fields_ if isinstance(cls._fields_[k], IntField)]
+            if not cls._primarys_:
+                raise RuntimeError('there is no primarykey in the model.')
+        return cls._primarys_[0]
+
+    @classmethod
+    def set_model_primarykey(cls, *keys):
+        cls._primarys_ = list(keys)
+
+    @classmethod
+    def get_model_uniques(cls, key=''):
+        if key:
+            return cls._uniques_[key]
+        return cls._uniques_
+
+    @classmethod
+    def set_model_uniques(cls, **kwargs):
+        cls._uniques_ = kwargs
+
+    @classmethod
+    def get_model_foreigns(cls, key=''):
+        if key:
+            return cls._foreigns_[key]
+        return cls._foreigns_
+
+    @classmethod
+    def set_model_foreigns(cls, **kwargs):
+        cls._foreigns_ = kwargs
+
+    @classmethod
+    def get_model_collate(cls):
+        return cls._collate_
+
+    @classmethod
+    def set_model_collate(cls, collate):
+        cls._collate_ = collate
+
+    @classmethod
+    def get_model_engine(cls):
+        return cls._engine_
+
+    @classmethod
+    def set_model_engine(cls, engine):
+        cls._engine_ = engine
+
+    @classmethod
+    def get_model_sql(cls):
+        items = ['CREATE TABLE `%s`(\n' % cls.get_model_name(),
+                 ',\n'.join(['\t%s' % field.to_sql() for field in cls.get_model_fields().values()]),
+                 ',\n\tPRIMARY KEY (`%s`)' % cls.get_model_primarykey()]
+        uniques = cls.get_model_uniques()
+        if uniques:
+            items.append(',\n\t')
+            items.append(',\n\t'.join(['UNIQUE INDEX `%s` (`%s`)' % (key, value) for key, value in uniques.items()]))
+        foreigns = cls.get_model_foreigns()
+        if foreigns:
+            items.append(',\n\t')
+            items_foreign = []
+            for key, foreign in foreigns.items():
+                name = cls.get_model_name()
+                f_name = foreign.get_model_name()
+                f_key = foreign.get_model_primarykey()
+                items_foreign\
+                    .append('CONSTRAINT `{t_name}_{f_name}` FOREIGN KEY (`{t_key}`) REFERENCES `{f_name}` (`{f_key}`)'
+                            .format(t_name=name, f_name=f_name, t_key=key, f_key=f_key))
+            items.append(',\n\t'.join(items_foreign))
+        items.append('\n)\n')
+        items.append('COLLATE=\'%s\'\n' % cls.get_model_collate().name)
+        items.append('ENGINE=%s\n;' % cls.get_model_engine().name)
+        return ''.join(items)
+
+
+def model(name='', fields='', primarys=None,
+          uniques=None, foreigns=None,
+          collate=COLLATE.utf8_general_ci, engine=ENGINE.InnoDB):
+    """
+
+        装饰器 - 数据库映射模型装饰器
+
+    :param name: 表名， 目前不支持
+    :param fields: 字段列表
+    :param primarys: 主键列表
+    :param uniques: 唯一键字典
+    :param foreigns: 外键字典
+    :param collate: 字符集
+    :param engine: 数据库引擎
+    :return: 返回模型类
+    """
+    def set_model_cls(cls):
+        if isinstance(cls, type) and not issubclass(cls, Model):
+            cls = type(cls.__name__, (Model, cls), dict(Model.__dict__, **cls.__dict__))
+
+        # 设置名称
+        if hasattr(cls, 'set_model_name'):
+            cls.set_model_name(name or cls.__name__)
+
+        # 设置字段
+        _field_names_ = fields if isinstance(fields, (tuple, list)) and fields \
+            else (_name_ for _name_ in fields.strip().split() if _name_) if isinstance(fields, str) and fields \
+            else []
+        _field_items_ = []
+        _cls_attrs_ = dir(cls)
+        for _name_ in _field_names_:
+            if _name_ in _cls_attrs_:
+                _attr_ = getattr(cls, _name_)
+                if isinstance(_attr_, Field):
+                    _attr_.name = _name_
+                    _field_items_.append((_name_, _attr_))
+        if hasattr(cls, 'set_model_fields'):
+            cls.set_model_fields(*_field_items_)
+
+        # 设置主键
+        _primary_keys_ = primarys if isinstance(primarys, (tuple, list)) and primarys \
+            else (_key_ for _key_ in primarys.strip().split() if _key_) if isinstance(primarys, str) and primarys \
+            else []
+        if hasattr(cls, 'set_model_primarykey'):
+            cls.set_model_primarykey(*_primary_keys_)
+
+        # 设置唯一键和外键
+        if hasattr(cls, 'set_model_uniques') and hasattr(cls, 'set_model_foreigns'):
+            if uniques:
+                cls.set_model_uniques(**uniques)
+            if foreigns:
+                cls.set_model_foreigns(**foreigns)
+        # 设置字符集和储存引擎
+        if hasattr(cls, 'set_model_collate') and hasattr(cls, 'set_model_engine'):
+            cls.set_model_collate(collate)
+            cls.set_model_engine(engine)
+        return cls
+    return set_model_cls
+
+
 class Table(collections.OrderedDict):
     # 表名
     _name = ''
@@ -222,11 +490,6 @@ class Table(collections.OrderedDict):
         if not filter_value_lambda:
             return [(k, self[k]) for k in self if not self.get_table_fields(k).is_auto()]
         return [(k, self[k]) for k in self if not self.get_table_fields(k).is_auto() and filter_value_lambda(self[k])]
-
-    def foreign_items(self, by_dict=False):
-        if not by_dict:
-            return [(k, self.get_table_foreigns(k), self[k]) for k in self if k in self.get_table_foreigns()]
-        return {k: (self.get_table_foreigns(k), self[k]) for k in self if k in self.get_table_foreigns()}
 
     @classmethod
     def set_table_name(cls, name):
@@ -363,15 +626,15 @@ def table(name='', fields=None, primarykey=None,
     return set_table_cls
 
 
-@table(fields='id pid', primarykey='id', unique=dict(_pid='pid'))
-class PID(Table):
+@model(fields='id pid', primarys='id', uniques=dict(_pid='pid'))
+class PID(Model):
     id = AutoIntField()
     pid = IntField()
 
 
-@table(fields='id pid name age birth update_at', primarykey='id',
-       unique=dict(_name_='name'), foreign=dict(pid=PID))
-class Test(Table):
+@model(fields='id pid name age birth update_at', primarys='id',
+       uniques=dict(_name_='name', _pid_='pid'), foreigns=dict(pid=PID))
+class Test(Model):
     id = AutoIntField()
     pid = IntField()
     name = CharField(size=20)
@@ -381,7 +644,15 @@ class Test(Table):
 
 
 if __name__ == '__main__':
+    print(PID.get_model_sql())
+    print(Test.get_model_sql())
     t = Test()
+    print(Test())
+    t['id'] = 3
     print(t)
-    print(*t.auto_items())
-    print(*t.items())
+    t['age'] = 4
+    print(t)
+    print(t.get_sql_insert())
+    t['name'] = 'dgf'
+    print(t.get_sql_update())
+    print(t.get_sql_query(('count(*) as num',), limit=(10,20)))
