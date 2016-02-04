@@ -87,7 +87,7 @@ class Str(Node):
 
 class Key(Str):
     def __init__(self, key):
-        if not isinstance(key, str) or not key:
+        if not key:
             raise ValueError('the key arg should be str type and not empty!')
         super().__init__(key)
 

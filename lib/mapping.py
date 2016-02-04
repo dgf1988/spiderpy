@@ -330,7 +330,7 @@ class Model(collections.OrderedDict):
         cls._engine_ = engine
 
     @classmethod
-    def get_model_sql(cls):
+    def get_sql_create(cls):
         items = ['CREATE TABLE `%s`(\n' % cls.get_model_name(),
                  ',\n'.join(['\t%s' % field.to_sql() for field in cls.get_model_fields().values()]),
                  ',\n\tPRIMARY KEY (`%s`)' % cls.get_model_primarykey()]
@@ -644,8 +644,8 @@ class Test(Model):
 
 
 if __name__ == '__main__':
-    print(PID.get_model_sql())
-    print(Test.get_model_sql())
+    print(PID.get_sql_create())
+    print(Test.get_sql_create())
     t = Test()
     print(Test())
     t['id'] = 3
