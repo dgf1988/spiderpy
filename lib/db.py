@@ -3,21 +3,25 @@ import enum
 
 import pymysql
 
-__all__ = ['Mysql']
+__all__ = ['Database', 'Mysql']
 
 
-class ApiDatabase(object):
+class Database(object):
 
     @property
     def config(self):
+        """
+            数据库配置
+        :return:
+        """
         raise NotImplementedError()
 
     @property
     def name(self):
-        raise NotImplementedError()
-
-    @name.setter
-    def name(self, database):
+        """
+            数据库名
+        :return:
+        """
         raise NotImplementedError()
 
     def is_open(self):
@@ -46,7 +50,7 @@ class ApiDatabase(object):
         return self.close()
 
 
-class Mysql(ApiDatabase):
+class Mysql(Database):
     def __init__(self, user='', passwd='', db='', host='localhost', port=3306, charset='utf8', autocommit=True):
         self._config = dict(
             user=user,
@@ -69,10 +73,6 @@ class Mysql(ApiDatabase):
     def name(self):
         return self._config['db']
 
-    @name.setter
-    def name(self, name: str):
-        self._config['db'] = name
-
     def is_open(self):
         if not self._connection:
             return False
@@ -90,7 +90,9 @@ class Mysql(ApiDatabase):
             self._connection.close()
 
     def set_db(self, str_db: str):
-        self._config['db'] = str_db
+        if not str_db:
+            return
+        self.config['db'] = str_db
         return self._connection.select_db(str_db)
 
     def commit(self):

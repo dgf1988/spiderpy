@@ -15,7 +15,7 @@ __all__ = ['Html',
 
 
 @lib.orm.table('html', fields='id html_url html_code html_encoding html_update',
-               primarykey='id', unique=dict(url='html_url'))
+               primarys='id', uniques=dict(url='html_url'))
 class Html(lib.orm.Table):
     id = lib.orm.AutoIntField()
     html_url = lib.orm.VarcharField()
@@ -177,7 +177,7 @@ class Html(lib.orm.Table):
 class Db(lib.orm.Db):
     def __init__(self, user, passwd, name_db, host, port, charset):
         super().__init__(lib.orm.Mysql(user, passwd, name_db, host, port, charset))
-        self.html = self.table_set(Html)
+        self.html = self.set(Html)
 
 
 Html.Db = Db(Html.Config.get('db_user'),
@@ -216,7 +216,6 @@ if __name__ == '__main__':
 
     Html.Db.config.update(db='html')
     with Html.Db as db:
-        for tableset in db:
-            for item in tableset:
-                print(item)
+        h = Html('http://www.baidu.com')
+        print(h)
 

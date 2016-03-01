@@ -1,14 +1,14 @@
 # coding: utf-8
 
 from lib.db import *
-from lib.query import *
+from lib.table import *
 from lib.mapping import *
 from lib.sql import *
 from collections import OrderedDict
 
 
-@model('html', fields='id html_url html_code html_encoding html_update', primarys='id', uniques=dict(url='html_url'))
-class Html(Model):
+@table('html', fields='id html_url html_code html_encoding html_update', primarys='id', uniques=dict(url='html_url'))
+class Html(Table):
     id = AutoIntField()
     html_url = VarcharField()
     html_code = IntField()
@@ -16,16 +16,19 @@ class Html(Model):
     html_update = DatetimeField(current_timestamp=True, on_update=True)
 
 
-@model('country', fields='id name', primarys='id', uniques=dict(c_name='name'))
-class CountryTable(Model):
+@table('country', fields='id name', primarys='id', uniques=dict(c_name='name'))
+class CountryTable(Table):
     id = AutoIntField()
     name = CharField()
 
 
+class DbHoetom(Db):
+    def __init__(self):
+        super().__init__(Mysql('root', 'guofeng001', 'hoetom'))
+        self.country = self.set(CountryTable)
+
+
 if __name__ == '__main__':
-    db = Mysql(user='root', passwd='guofeng001', db='hoetom')
-    with db:
-        q = QuerySet(db, CountryTable)
-        print(q.count())
-        for item in q.query(order='id'):
-            print(item)
+    with DbHoetom() as db:
+        c = CountryTable()
+        print(c)

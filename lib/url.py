@@ -67,15 +67,7 @@ class UrlParse(object):
         return self._parse.password or ''
 
     def items(self):
-        yield 'scheme', self.scheme
-        yield 'username', self.username
-        yield 'password', self.password
-        yield 'host', self.host
-        yield 'port', self.port
-        yield 'path', self.path
-        yield 'params', self.params
-        yield 'query', self.query
-        yield 'fragment', self.fragment
+        return list(iter(self))
 
     def dict_url(self):
         return dict(
@@ -129,7 +121,15 @@ class UrlParse(object):
         return '<%s: %s>' % (self.__class__.__name__, self.str_url())
 
     def __iter__(self):
-        return self.items()
+        yield 'scheme', self.scheme
+        yield 'username', self.username
+        yield 'password', self.password
+        yield 'host', self.host
+        yield 'port', self.port
+        yield 'path', self.path
+        yield 'params', self.params
+        yield 'query', self.query
+        yield 'fragment', self.fragment
 
     def __repr__(self):
         return '<%s: %s>' % (self.__class__.__name__, self.str_url())
