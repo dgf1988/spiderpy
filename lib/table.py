@@ -79,7 +79,7 @@ class TableSet(ApiTableSet):
 
     def remove(self, entity):
         if entity.has_primarykey():
-            self.db.execute(entity.get_sql_delete())
+            return self.db.execute(entity.get_sql_delete())
 
     def get(self, primarykey=None, **kwargs):
         query = self.db.query(self.table.get_sql_query(where={self.table.get_table_primarykey(): primarykey})) \
@@ -118,7 +118,9 @@ class TableSet(ApiTableSet):
 
 
 class Db(object):
-
+    """
+        数据库连接器
+    """
     def __init__(self, db):
         self.db = db
 

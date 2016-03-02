@@ -53,6 +53,7 @@ class Status(object):
     def __iter__(self):
         yield self.code
         yield self.message
+        yield self.description
 
     def __str__(self):
         return self.to_str()
