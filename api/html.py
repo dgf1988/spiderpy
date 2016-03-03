@@ -10,17 +10,18 @@ import lib.url
 import lib.orm
 
 
-__all__ = ['Html',
-           'get', 'load', 'update', 'delete']
+__all__ = ['HtmlTable', 'HtmlDb', 'HtmlPage', 'Html']
 
 
 @lib.orm.table(
         'html', fields='id html_url html_code html_encoding html_update', primarys='id', uniques=dict(url='html_url'))
 class HtmlTable(lib.orm.Table):
     id = lib.orm.AutoIntField()
+
     html_url = lib.orm.VarcharField()
     html_code = lib.orm.IntField()
     html_encoding = lib.orm.CharField(default='utf-8', nullable=True)
+
     html_update = lib.orm.DatetimeField(current_timestamp=True, on_update=True)
 
 
@@ -28,19 +29,20 @@ class HtmlDb(lib.orm.Db):
     def __init__(self, user='root', password='guofeng001', db='html', host='localhost', port=3306):
         super().__init__(db=lib.orm.Mysql(user, password, db, host, port))
         self.html = self.set(HtmlTable)
+        logging.info(self.html)
 
 
 class HtmlPage(object):
     Path = 'D:/HtmlStor/'
     Encoding = 'utf-8'
 
-    def __init__(self, html_url, encoding=''):
-        self.url = html_url
-        self.urlmd5 = hashlib.md5(self.url.encode()).hexdigest()
+    def __init__(self, url: lib.url.UrlParse, encoding=None):
+        self.url = url
+        self.urlstr = url.str_url()
+        self.urlmd5 = hashlib.md5(self.urlstr.encode()).hexdigest()
 
-        self.urlparse = lib.url.parse(html_url)
-        self.urlhost = self.urlparse.host
-        self.urlpath = self.urlparse.path
+        self.urlhost = self.url.host
+        self.urlpath = self.url.path
 
         self.filepath, self.filename = self.get_filename()
 
@@ -49,16 +51,7 @@ class HtmlPage(object):
         self.code = 0
 
     def __repr__(self):
-        return '<HtmlPage: url=%s, encoding=%s, code=%s>' % (self.url, self.encoding, self.code)
-
-    def http_get(self, timeout=30, encoding='', allow_code=(200,)):
-        r = requests.get(self.url, timeout=timeout)
-        if r.status_code in allow_code:
-            r.encoding = encoding or self.encoding or r.encoding
-            self.encoding = r.encoding
-            self.text = r.text
-            self.code = r.status_code
-            return self.code
+        return '<HtmlPage: url=%s, encoding=%s>' % (self.url, self.encoding)
 
     def get_title(self):
         if self.text:
@@ -72,6 +65,15 @@ class HtmlPage(object):
         else:
             filepath = self.Path + self.urlhost + '%s/' % self.urlpath + self.urlmd5[0:2]
         return filepath, filepath+'/'+self.urlmd5[2:]+'.html'
+
+    def get(self, timeout=30, encoding=None, allow_code=(200,)):
+        r = requests.get(self.urlstr, timeout=timeout)
+        if r.status_code in allow_code:
+            r.encoding = encoding or self.encoding or r.encoding
+            self.encoding = r.encoding
+            self.text = r.text
+            self.code = r.status_code
+            return r.status_code
 
     def save(self):
         if self.text:
@@ -103,8 +105,11 @@ class HtmlPage(object):
         finally:
             return self.filename
 
-    def update(self, timeout=30, encoding='', allow_code=(200,)):
-        return self.http_get(timeout, encoding, allow_code) and self.save() and self.code
+    def update(self, timeout=30, encoding=None, allow_code=(200,)):
+        return self.get(timeout, encoding, allow_code) and self.save() and self.code
+
+    def to_html(self):
+        return HtmlTable(html_url=self.urlstr, html_encoding=self.encoding, html_code=self.code)
 
 
 class Html(object):
@@ -121,95 +126,105 @@ class Html(object):
 
     Db = None
 
-    def __init__(self, html_url, **kwargs):
-        self.html = HtmlTable(html_url)
-        self.page = HtmlPage(html_url)
+    def __init__(self):
+        self.data = None
+        self.page = None
 
     @property
     def url(self):
-        return self.html.get('html_url')
+        return self.data.get('html_url')
 
     @classmethod
-    def db_reset(cls, **kwargs):
+    def db_set(cls, **kwargs):
         # 重置
         if cls.Db and cls.Db.is_open():
             cls.Db.close()
-        cls.Db = Db(
+        cls.Db = HtmlDb(
                 kwargs.get('user') or cls.Config.get('db_user'),
                 kwargs.get('passwd') or cls.Config.get('db_passwd'),
                 kwargs.get('db') or kwargs.get('database') or kwargs.get('name') or cls.Config.get('db_name'),
                 kwargs.get('host') or cls.Config.get('db_host'),
-                kwargs.get('port') or cls.Config.get('db_port'),
-                kwargs.get('charset') or cls.Config.get('db_charset')
+                kwargs.get('port') or cls.Config.get('db_port')
         )
         return bool(cls.Db)
 
     @classmethod
-    def db_restart(cls):
-        # 重连
-        if cls.Db.is_open():
-            cls.Db.close()
+    def db_open(cls):
+        if not cls.Db:
+            cls.db_set()
         cls.Db.open()
+
+    @classmethod
+    def db_is_open(cls):
         return cls.Db.is_open()
 
     @classmethod
-    def db_open(cls):
-        return cls.Db.open()
-
-    @classmethod
     def db_close(cls):
-        return cls.Db.close()
+        cls.Db.close()
 
     def db_get(self, primarykey=None, **kwargs):
+        html_get = self.Db.html.get(primarykey, **kwargs)
+        if html_get:
+            self.data = html_get
+            return self.data.get_primarykey()
 
+    def db_add(self):
+        if not self.data:
+            return None
+        html_add = self.Db.html.add(self.data)
+        if html_add:
+            self.data = html_add
+            return self.data.get_primarykey()
 
+    def db_remove(self):
+        self.Db.html.remove(self.data)
+        self.data = None
 
+    def db_update(self):
+        html_update = self.Db.html.update(self.data)
+        if html_update:
+            self.data = html_update
+            return self.data.get_primarykey()
 
+    def page_get(self, timeout=30, allow_code=(200,)):
+        if self.data and self.data['html_url']:
+            self.page = HtmlPage(lib.url.parse(self.data['html_url']), self.data['html_encoding'])
+            if self.page.get(timeout, allow_code=allow_code):
+                self.data['html_encoding'] = self.page.encoding
+                self.data['html_code'] = self.page.code
+                return self.page.code
 
+    def page_load(self):
+        if self.data and self.data['html_url']:
+            self.page = HtmlPage(lib.url.parse(self.data['html_url']), self.data['html_encoding'])
+            return self.page.load()
 
-class Db(lib.orm.Db):
-    def __init__(self, user, passwd, name_db, host, port, charset):
-        super().__init__(lib.orm.Mysql(user, passwd, name_db, host, port, charset))
-        self.html = self.set(Html)
+    def page_save(self):
+        return self.page and self.page.save()
 
+    def page_delete(self):
+        self.page.delete()
+        self.page = None
 
-Html.Db = Db(Html.Config.get('db_user'),
-             Html.Config.get('db_passwd'),
-             Html.Config.get('db_name'),
-             Html.Config.get('db_host'),
-             Html.Config.get('db_port'),
-             Html.Config.get('db_charset'))
-
-
-def get(html_url, timeout=30, encoding='', allow_httpcode=(200,)):
-    _html_ = Html(html_url)
-    _html_.http_get(timeout, encoding, allow_httpcode)
-    return _html_
-
-
-def load(html_url):
-    _html_ = Html(html_url)
-    _html_.load()
-    return _html_
-
-
-def update(html_url, timeout=30, encoding='', allow_httpcode=(200,)):
-    _html_ = Html(html_url)
-    _html_.http_get(timeout, encoding, allow_httpcode)
-    _html_.save()
-    return _html_
-
-
-def delete(html_url):
-    return Html(html_url).delete()
+    def get(self, url, timeout=30, encoding=None, allow_code=(200,)):
+        self.data = HtmlTable(html_url=url, html_encoding=encoding)
+        return self.page_get(timeout, allow_code)
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.WARNING)
+    logging.basicConfig(level=logging.INFO)
 
-    htmlpage = HtmlPage('http://www.dingguofeng.com')
-    print(htmlpage.update())
-    print(htmlpage)
-    print(htmlpage.load())
-    print(htmlpage)
+    Html.db_set()
+    Html.db_open()
 
+    for h in Html.Db.html:
+        print(h)
+    html = Html()
+    assert html.data is None
+    assert html.page is None
+
+    html.db_get(html_url='http://www.dingguofeng.com')
+    html.page_load()
+    print(html.data)
+    print(html.page.get_title())
+    Html.db_close()

@@ -48,7 +48,7 @@ class SEX(enum.IntEnum):
         return index_sex or SEX.Default
 
 
-@lib.orm.table('country', fields='id name', primarykey='id', unique=dict(c_name='name'))
+@lib.orm.table('country', fields='id name', primarys='id', uniques=dict(c_name='name'))
 class CountryTable(lib.orm.Table):
     id = lib.orm.AutoIntField()
     name = lib.orm.CharField()
@@ -90,13 +90,14 @@ class PlayerTable(lib.orm.Table):
 
 class Db(lib.orm.Db):
     def __init__(self):
-        super().__init__(lib.orm.Mysql(user='root', passwd='guofeng001', db='hoetom_2'))
-        self.player = self.table_set(PlayerTable)
-        self.rank = self.table_set(RankTable)
-        self.country = self.table_set(CountryTable)
-        self.playerid = self.table_set(PlayeridTable)
+        super().__init__(lib.orm.Mysql(user='root', passwd='guofeng001', db='hoetom'))
+        self.player = self.set(PlayerTable)
+        self.rank = self.set(RankTable)
+        self.country = self.set(CountryTable)
+        self.playerid = self.set(PlayeridTable)
 
 
 if __name__ == '__main__':
     with Db() as db:
-        print(db.player.count())
+        playerlist = db.player.get(p_name='李世石')
+        print(playerlist)
