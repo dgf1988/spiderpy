@@ -4,15 +4,16 @@ import lib.url
 
 
 class PlayerUrl(object):
-    _base_url_ = 'http://www.hoetom.com/playerinfor_2011.jsp?id=%s'
+    BaseUrl = 'http://www.hoetom.com/playerinfor_2011.jsp?id=%s'
 
     @classmethod
     def make(cls, playerid):
-        return cls._base_url_ % playerid
+        return cls.BaseUrl % playerid
 
     def __init__(self, playerid):
         self.playerid = playerid
-        self.url = lib.url.parse(self.make(self.playerid)).str_url()
+        self.urlparse = lib.url.parse(self.make(self.playerid))
+        self.urlstr = self.urlparse.str_url()
 
-    def __str__(self):
-        return '<PlayerUrl: %s>' % self.url
+    def __repr__(self):
+        return '<%s: %s>' % (self.__class__.__name__, self.urlstr())

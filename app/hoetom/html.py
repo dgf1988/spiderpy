@@ -2,8 +2,5 @@
 import re
 import datetime
 
-import api.html
+from api.html import *
 
-
-class PlayerHtml(api.html.Html):
-    pass

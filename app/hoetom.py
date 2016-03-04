@@ -12,9 +12,12 @@ class Player(object):
         self.id = id_player
         if not id_player or not isinstance(id_player, int):
             raise ValueError('playerid %s not accept' % id_player)
-        self.url = PlayerUrl(self.id).url
-        self.html = PlayerHtml(self.url)
-        self.player = PlayerTable()
+        self.url = PlayerUrl(self.id)
+
+        self.html = Html()
+        self.html.data = HtmlTable(html_url=self.url.urlstr, html_encoding='GBK')
+
+        self.player = None
         self.data = collections.OrderedDict((
             ('id', None),
             ('name', None),
@@ -24,21 +27,23 @@ class Player(object):
             ('birth', None)
         ))
 
-    def get_html(self, timeout=30, encoding=''):
-        return self.html.http_get(timeout, encoding)
+    def get_html(self, timeout=30, allow_code=(200,)):
+        return self.html.page_get(timeout, allow_code)
 
     def load_html(self):
-        return self.html.load()
+        return self.html.page_load()
 
     def get_data_from_html(self):
-        if not self.html.text:
+        if not self.html.page.text:
             return None
-        _items_ = self.items_from_html(self.html.text)
+        _items_ = self.items_from_html(self.html.page.text)
         if _items_:
             self.data.update(_items_)
             return self.data['id'] == self.id
 
     def get_data_from_player(self):
+        if not self.player:
+            return None
         # 没有主键不要
         if not self.player.has_primarykey():
             return None
@@ -179,18 +184,16 @@ class Hoetom(object):
 
 
 if __name__ == '__main__':
-    import api.html
-    api.html.Html.db_open()
+
+    Html.db_open()
+
     with Db() as db:
-        for pid in db.playerid:
-            p = Player(db, pid['playerid'])
-            p.load()
-            if not p.player.has_primarykey() and not p.html.has_primarykey():
-                p.get()
-            print(p.html)
-            print(p.player)
-            fs = dict(db.foreign_items(p.player))
-            print(fs)
-            print('+++++++++++++++++++++++++')
-    api.html.Html.db_close()
+        _playerid = db.playerid.get(10)
+        print(_playerid)
+        _player = Player(db, _playerid['playerid'])
+        _player.get_html()
+        _player.get_data_from_html()
+        print(_player.data)
+
+    Html.db_close()
 

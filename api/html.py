@@ -202,6 +202,9 @@ class Html(object):
     def page_save(self):
         return self.page and self.page.save()
 
+    def page_update(self, timeout=30, allow_code=(200,)):
+        return self.page_get(timeout, allow_code) and self.page_save()
+
     def page_delete(self):
         self.page.delete()
         self.page = None
@@ -214,17 +217,14 @@ class Html(object):
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
 
-    Html.db_set()
     Html.db_open()
-
-    for h in Html.Db.html:
-        print(h)
     html = Html()
     assert html.data is None
     assert html.page is None
 
-    html.db_get(html_url='http://www.dingguofeng.com')
-    html.page_load()
-    print(html.data)
-    print(html.page.get_title())
+    html.db_get(html_url='http://www.weiqi163.com')
+
+    for h in Html.Db.html:
+        print(h)
+
     Html.db_close()
