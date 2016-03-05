@@ -130,10 +130,6 @@ class Html(object):
         self.data = None
         self.page = None
 
-    @property
-    def url(self):
-        return self.data.get('html_url')
-
     @classmethod
     def db_set(cls, **kwargs):
         # 重置
@@ -169,15 +165,14 @@ class Html(object):
             return self.data.get_primarykey()
 
     def db_add(self):
-        if not self.data:
-            return None
         html_add = self.Db.html.add(self.data)
         if html_add:
             self.data = html_add
             return self.data.get_primarykey()
 
     def db_remove(self):
-        self.Db.html.remove(self.data)
+        if self.data:
+            self.Db.html.remove(self.data)
         self.data = None
 
     def db_update(self):
@@ -206,12 +201,31 @@ class Html(object):
         return self.page_get(timeout, allow_code) and self.page_save()
 
     def page_delete(self):
-        self.page.delete()
+        if self.page:
+            self.page.delete()
         self.page = None
 
-    def get(self, url, timeout=30, encoding=None, allow_code=(200,)):
-        self.data = HtmlTable(html_url=url, html_encoding=encoding)
+    def get(self, url=None, timeout=30, encoding=None, allow_code=(200,)):
+        if url:
+            self.db_get(html_url=url)
+        if not self.data:
+            if not url:
+                return None
+            self.data = HtmlTable(html_url=url, html_encoding=encoding)
+        if encoding:
+            self.data['html_encoding'] = encoding
         return self.page_get(timeout, allow_code)
+
+    def save(self):
+        return self.page_save() and (self.db_add() or self.db_update())
+
+    def update(self, timeout=30, encoding=None, allow_code=(200,)):
+        if self.get(None, timeout, encoding, allow_code):
+            return self.save()
+
+    def delete(self):
+        self.db_remove()
+        self.page_delete()
 
 
 if __name__ == '__main__':
@@ -222,9 +236,9 @@ if __name__ == '__main__':
     assert html.data is None
     assert html.page is None
 
-    html.db_get(html_url='http://www.weiqi163.com')
-
-    for h in Html.Db.html:
-        print(h)
+    html.db_get(html_url='http://www.dingguofeng.com')
+    print(html.data)
+    html.delete()
+    print(html.data, html.page)
 
     Html.db_close()

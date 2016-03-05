@@ -88,6 +88,29 @@ class PlayerTable(lib.orm.Table):
                 self['p_birth'])
 
 
+class PlayerData(object):
+    def __init__(self):
+        self.data = None
+        self.sex = None
+        self.nat = None
+        self.rank = None
+
+    def to_dict(self):
+        return dict(
+            id=self.data['id'],
+            p_id=self.data['p_id'],
+            p_name=self.data['p_name'],
+            p_sex=self.sex and self.sex.ch_str,
+            p_nat=self.nat and self.nat['name'],
+            p_rank=self.rank and self.rank['rank'],
+            p_birth=self.data['p_birth']
+        )
+
+    def to_str(self):
+        return 'id: {id}, playerid: {p_id}, 姓名: {p_name}, 性别: {p_sex}, 国籍: {p_nat}, 段位: {p_rank}, 生日: {p_birth}'\
+            .format(**self.to_dict())
+
+
 class Db(lib.orm.Db):
     def __init__(self):
         super().__init__(lib.orm.Mysql(user='root', passwd='guofeng001', db='hoetom'))
@@ -96,8 +119,29 @@ class Db(lib.orm.Db):
         self.country = self.set(CountryTable)
         self.playerid = self.set(PlayeridTable)
 
+    def get_player(self, primarykey=None, **kwargs):
+        _player_ = self.player.get(primarykey, **kwargs)
+        if _player_:
+            _player_get_ = PlayerData()
+            _player_get_.data = _player_
+            _player_get_.sex = SEX.from_obj(_player_get_.data['p_sex'])
+            if _player_['p_nat']:
+                _player_get_.nat = self.country.get(_player_['p_nat'])
+            if _player_['p_rank']:
+                _player_get_.rank = self.rank.get(_player_['p_rank'])
+            return _player_get_
+
+    def map_player(self, **kwargs):
+        _player_map_ = PlayerData()
+        _player_map_.data = PlayerTable(id=kwargs.get('id'), p_id=kwargs.get('p_id'), p_name=kwargs.get('p_name'))
+        _player_map_.sex = SEX.from_obj(kwargs.get('p_sex'))
+        _player_map_.data['p_sex'] = _player_map_.sex.value
+        _player_map_.nat = self.country.get(name=kwargs.get('p_nat')) or self.country.add(CountryTable(name=kwargs.get('p_nat')))
+        _player_map_.data['p_nat'] = _player_map_.nat['id']
 
 if __name__ == '__main__':
     with Db() as db:
-        playerlist = db.player.get(p_name='李世石')
-        print(playerlist)
+        player = db.get_player(p_name='李世石')
+        print(player.data)
+        print(player.to_dict())
+        print(player.to_str())
