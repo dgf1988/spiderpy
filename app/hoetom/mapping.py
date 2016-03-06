@@ -5,7 +5,7 @@ import enum
 import lib.orm
 
 
-__all__ = ['SEX', 'CountryTable', 'RankTable', 'PlayerTable', 'PlayeridTable', 'Db']
+__all__ = ['SEX', 'CountryTable', 'RankTable', 'PlayerTable', 'PlayeridTable', 'HoetomDb']
 
 
 class SEX(enum.IntEnum):
@@ -95,6 +95,9 @@ class PlayerData(object):
         self.nat = None
         self.rank = None
 
+    def __bool__(self):
+        return bool(self.data)
+
     def to_dict(self):
         return dict(
             id=self.data['id'],
@@ -111,9 +114,9 @@ class PlayerData(object):
             .format(**self.to_dict())
 
 
-class Db(lib.orm.Db):
-    def __init__(self):
-        super().__init__(lib.orm.Mysql(user='root', passwd='guofeng001', db='hoetom'))
+class HoetomDb(lib.orm.Db):
+    def __init__(self, user='root', passwd='guofeng001', db='hoetom', host='localhost', port=3306):
+        super().__init__(lib.orm.Mysql(user, passwd, db, host, port))
         self.player = self.set(PlayerTable)
         self.rank = self.set(RankTable)
         self.country = self.set(CountryTable)
@@ -131,17 +134,5 @@ class Db(lib.orm.Db):
                 _player_get_.rank = self.rank.get(_player_['p_rank'])
             return _player_get_
 
-    def map_player(self, **kwargs):
-        _player_map_ = PlayerData()
-        _player_map_.data = PlayerTable(id=kwargs.get('id'), p_id=kwargs.get('p_id'), p_name=kwargs.get('p_name'))
-        _player_map_.sex = SEX.from_obj(kwargs.get('p_sex'))
-        _player_map_.data['p_sex'] = _player_map_.sex.value
-        _player_map_.nat = self.country.get(name=kwargs.get('p_nat')) or self.country.add(CountryTable(name=kwargs.get('p_nat')))
-        _player_map_.data['p_nat'] = _player_map_.nat['id']
-
 if __name__ == '__main__':
-    with Db() as db:
-        player = db.get_player(p_name='李世石')
-        print(player.data)
-        print(player.to_dict())
-        print(player.to_str())
+    pass

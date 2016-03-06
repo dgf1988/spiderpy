@@ -77,6 +77,9 @@ class TableSet(ApiTableSet):
             self.db.execute(entity.get_sql_update())
             return self.get(entity.get_primarykey())
 
+    def save(self, entity):
+        return self.add(entity) or self.update(entity)
+
     def remove(self, entity):
         if entity.has_primarykey():
             return self.db.execute(entity.get_sql_delete())

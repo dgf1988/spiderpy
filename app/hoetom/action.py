@@ -3,7 +3,7 @@ import re
 import datetime
 
 import api.html
-import app.hoetom.table as mmodel
+import app.hoetom.mapping as mmodel
 
 
 class Action(object):

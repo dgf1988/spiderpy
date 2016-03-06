@@ -13,6 +13,13 @@ import lib.orm
 __all__ = ['HtmlTable', 'HtmlDb', 'HtmlPage', 'Html']
 
 
+HtmlPathRoot = 'D:/HtmlStor/'
+HtmlDbSettings = dict(
+    user='root', passwd='guofeng001', db='html',
+    host='localhost', port=3306, charset='utf8'
+)
+
+
 @lib.orm.table(
         'html', fields='id html_url html_code html_encoding html_update', primarys='id', uniques=dict(url='html_url'))
 class HtmlTable(lib.orm.Table):
@@ -29,14 +36,13 @@ class HtmlDb(lib.orm.Db):
     def __init__(self, user='root', password='guofeng001', db='html', host='localhost', port=3306):
         super().__init__(db=lib.orm.Mysql(user, password, db, host, port))
         self.html = self.set(HtmlTable)
-        logging.info(self.html)
 
 
 class HtmlPage(object):
     Path = 'D:/HtmlStor/'
     Encoding = 'utf-8'
 
-    def __init__(self, url: lib.url.UrlParse, encoding=None):
+    def __init__(self, url: lib.url.UrlParse, encoding=None, code=0):
         self.url = url
         self.urlstr = url.str_url()
         self.urlmd5 = hashlib.md5(self.urlstr.encode()).hexdigest()
@@ -48,7 +54,7 @@ class HtmlPage(object):
 
         self.encoding = encoding
         self.text = ''
-        self.code = 0
+        self.code = code
 
     def __repr__(self):
         return '<HtmlPage: url=%s, encoding=%s>' % (self.url, self.encoding)
@@ -107,9 +113,6 @@ class HtmlPage(object):
 
     def update(self, timeout=30, encoding=None, allow_code=(200,)):
         return self.get(timeout, encoding, allow_code) and self.save() and self.code
-
-    def to_html(self):
-        return HtmlTable(html_url=self.urlstr, html_encoding=self.encoding, html_code=self.code)
 
 
 class Html(object):
