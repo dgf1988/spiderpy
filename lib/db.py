@@ -3,7 +3,7 @@ import enum
 
 import pymysql
 
-__all__ = ['Database', 'Mysql']
+__all__ = ['Mysql']
 
 
 class Database(object):

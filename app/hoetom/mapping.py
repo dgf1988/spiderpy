@@ -88,6 +88,19 @@ class PlayerTable(lib.orm.Table):
                 self['p_birth'])
 
 
+@lib.orm.table(name='sgf', fields='id s_time s_place s_white s_black s_name s_rule s_steps s_result', primarys='id')
+class SgfTable(lib.orm.Table):
+    id = lib.orm.AutoIntField()
+    s_time = lib.orm.DatetimeField()
+    s_place = lib.orm.CharField()
+    s_white = lib.orm.IntField()
+    s_black = lib.orm.IntField()
+    s_name = lib.orm.CharField()
+    s_rule = lib.orm.CharField()
+    s_steps = lib.orm.TextField()
+    s_result = lib.orm.CharField()
+
+
 class PlayerData(object):
     def __init__(self):
         self.data = None

@@ -3,7 +3,10 @@
 import lib.url
 
 
-class PlayerInfoUrl(object):
+__all__ = ['PlayerUrl', 'PlayerRankingUrl', 'PlayerListUrl']
+
+
+class PlayerUrl(object):
     BaseUrl = 'http://www.hoetom.com/playerinfor_2011.jsp?id=%s'
 
     @classmethod
@@ -42,6 +45,8 @@ class PlayerListUrl(object):
         for ln in cls.BaseIndex:
             yield cls.BaseUrl + ln
 
+
+PlayerRankingUrl = 'http://www.hoetom.com/playeranking_2011.jsp'
 
 if __name__ == '__main__':
     print(PlayerListUrl.list(0, 27))

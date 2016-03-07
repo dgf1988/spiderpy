@@ -2,126 +2,117 @@
 
 import logging
 
-from api.html import *
-from app.hoetom.html import *
-from app.hoetom.mapping import *
-from app.hoetom.url import *
+import lib.url
 
-Encoding = 'GB18030'
+from app.hoetom import *
+from app.html import *
 
 
-def update_playerid(beg=0, end=None):
-    htmldb = HtmlDb()
-    hoetomdb = HoetomDb()
-    htmldb.open()
-    logging.info('open htmldb: %s' % htmldb.config)
-    hoetomdb.open()
-    logging.info('open hoetomdb: %s' % hoetomdb.config)
-
-    for indexurl in PlayerListUrl.list(beg, end):
-        logging.info('update: %s' % indexurl)
-        indexhtml = htmldb.html.get(html_url=indexurl)
-        if not indexhtml:
-            indexhtml = HtmlTable(html_url=indexurl, html_encoding=Encoding)
-        indexpage = HtmlPage(lib.url.parse(indexhtml['html_url']), Encoding)
-        if indexpage.get():
-            logging.info('title=%s, code=%s' % (indexpage.get_title(), indexpage.code))
-            indexhtml['html_encoding'] = indexpage.encoding
-            indexhtml['html_code'] = indexpage.code
-            logging.info('http get: url=%s, encoding=%s' % (indexpage.urlstr, indexpage.encoding))
-            indexpage.save()
-            indexhtml = htmldb.html.save(indexhtml)
-
-            logging.info(str(indexhtml))
-            playeridlist = get_playerid(indexpage.text)
-            for p_id in playeridlist:
-                playerid = hoetomdb.playerid.get(playerid=p_id)
-                if not playerid:
-                    playerid = hoetomdb.playerid.add(PlayeridTable(playerid=p_id))
-                logging.info(str(playerid))
-        else:
-            logging.warning('http get: code=%s' % indexpage.code)
-
-    htmldb.close()
-    logging.info('htmldb close')
-    hoetomdb.close()
-    logging.info('hoetomdb close')
+class Player(object):
+    def __init__(self):
+        pass
+    pass
 
 
-def update_playerinfo():
-    htmldb = HtmlDb()
-    hoetomdb = HoetomDb()
-    htmldb.open()
-    logging.info('open htmldb: %s' % htmldb.config)
-    hoetomdb.open()
-    logging.info('open hoetomdb: %s' % hoetomdb.config)
-    times = 0
-    for playerid in hoetomdb.playerid:
-        times += 1
-        logging.info('times={}'.format(times))
-        logging.info('playerid={}'.format(playerid))
-        url = PlayerInfoUrl(playerid['playerid'])
-        infohtml = htmldb.html.get(html_url=url.urlstr)
-        if not infohtml:
-            infohtml = HtmlTable(html_url=url.urlstr, html_encoding=Encoding)
-        infopage = HtmlPage(url.urlparse, encoding=Encoding)
-        if infopage.get():
-            logging.info('code={}, encoding={}, url={}'
-                         .format(infopage.code, infopage.encoding, infopage.urlstr))
-            infohtml['html_encoding'] = infopage.encoding
-            infohtml['html_code'] = infopage.code
-            infopage.save()
-            infohtml = htmldb.html.save(infohtml)
-            logging.info(str(infohtml))
+class Hoetom(object):
+    Encoding = 'GB18030'
 
-            getplayerinfo = get_playerinfo(infopage.text)
-            logging.info('playerdata={}'.format(getplayerinfo))
-            if getplayerinfo:
-                p_sex = SEX.from_obj(getplayerinfo.get('p_sex'))
 
-                p_nat = hoetomdb.country.get(name=getplayerinfo.get('p_nat'))
-                if not p_nat:
-                    p_nat = hoetomdb.country.add(CountryTable(name=getplayerinfo.get('p_nat')))
+class PlayerSpider(Hoetom):
 
-                p_rank = hoetomdb.rank.get(rank=getplayerinfo.get('p_rank'))
-                if not p_rank:
-                    p_rank = hoetomdb.rank.add(RankTable(rank=getplayerinfo.get('p_rank')))
+    def __init__(self, set_hoetom_db=None, set_html_db=None):
+        self.db_hoetom = HoetomDb(**set_hoetom_db) if set_hoetom_db else HoetomDb()
+        self.html_client = HtmlClient(**set_html_db) if set_html_db else HtmlClient()
 
-                playerinfo = hoetomdb.player.get(p_id=getplayerinfo.get('p_id')) or \
-                    hoetomdb.player.get(p_name=getplayerinfo.get('p_name'))
-                if not playerinfo:
-                    playerinfo = PlayerTable(
-                        p_id=getplayerinfo.get('p_id'),
-                        p_name=getplayerinfo.get('p_name'),
-                        p_sex=p_sex.value,
-                        p_nat=p_nat.get_primarykey(),
-                        p_rank=p_rank.get_primarykey(),
-                        p_birth=getplayerinfo.get('p_birth')
-                    )
-                    playerinfo = hoetomdb.player.add(playerinfo)
-                else:
-                    playerinfo.update(
-                            p_id=getplayerinfo.get('p_id'),
-                            p_name=getplayerinfo.get('p_name'),
-                            p_sex=p_sex.value,
-                            p_nat=p_nat.get_primarykey(),
-                            p_rank=p_rank.get_primarykey(),
-                            p_birth=getplayerinfo.get('p_birth')
-                        )
-                    playerinfo = hoetomdb.player.update(playerinfo)
-                logging.info('playerinfo={}'.format(playerinfo))
+    def open_db(self):
+        self.db_hoetom.open()
+        logging.info('open hoetom db')
+        self.html_client.open_db()
+        logging.info('open html db')
+        return self
 
-        else:
-            logging.warning('http error: code={}, url={}'.format(infopage.code, infopage.urlstr))
-            break
+    def __enter__(self):
+        return self.open_db()
 
-    htmldb.close()
-    logging.info('htmldb close')
-    hoetomdb.close()
-    logging.info('hoetomdb close')
+    def close_db(self):
+        self.db_hoetom.close()
+        logging.info('close hoetom db')
+        self.html_client.close_db()
+        logging.info('close html db')
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        return self.close_db()
+
+    def update_playerinfo(self, playerid):
+        logging.info('update player: playerid={}'.format(playerid))
+
+        player_url = PlayerUrl(playerid)
+        player_html = self.html_client.get(url=player_url.urlstr, encoding=self.Encoding)
+
+        if player_html:
+            logging.info('http get: code={}, url={}'.format(player_html['html_url'], player_html['html_code']))
+            logging.info('title: {}'.format(player_html.get_title()))
+
+            self.html_client.save(player_html)
+
+            logging.info('html save: {}'.format(player_html))
+
+            player_info = get_playerinfo(player_html.text)
+            logging.info('player info: {}'.format(player_info))
+
+            if player_info:
+                p_sex = SEX.from_obj(player_info['p_sex'])
+
+                p_nat = self.db_hoetom.country.get(name=player_info['p_nat']) or \
+                    self.db_hoetom.country.add(CountryTable(name=player_info.get('p_nat')))
+
+                p_rank = self.db_hoetom.rank.get(rank=player_info.get('p_rank')) or \
+                    self.db_hoetom.rank.add(RankTable(rank=player_info.get('p_rank')))
+
+                player_update = dict(
+                    p_id=player_info.get('p_id'),
+                    p_name=player_info.get('p_name'),
+                    p_sex=p_sex.value,
+                    p_nat=p_nat.get_primarykey(),
+                    p_rank=p_rank.get_primarykey(),
+                    p_birth=player_info.get('p_birth')
+                )
+                player = self.db_hoetom.player.get(p_id=player_info.get('p_id')) or \
+                    self.db_hoetom.player.get(p_name=player_info.get('p_name')) or \
+                    PlayerTable()
+                player.update(**player_update)
+                self.db_hoetom.player.save(player)
+                logging.info('player save: {}'.format(player))
+                return player.get_primarykey()
+
+    def update_playerid_many(self):
+        update_urls = PlayerListUrl.list()
+        update_urls.append(PlayerRankingUrl)
+
+        for update_url in update_urls:
+            logging.info('update: {}'.format(update_url))
+
+            update_html = self.html_client.get(url=update_url)
+
+            if update_html:
+                logging.info('update: code={}, url={}'.format(update_html['html_code'], update_html['html_url']))
+                logging.info('title: {}'.format(update_html.get_title()))
+
+                self.html_client.save(update_html)
+                logging.info('update html: {}'.format(update_html))
+
+                update_id_list = get_playerid(update_html.text)
+                for update_id in update_id_list:
+                    playerid = self.db_hoetom.playerid.get(playerid=update_id)
+                    if not playerid:
+                        playerid = self.db_hoetom.playerid.add(PlayeridTable(playerid=update_id))
+                    logging.info('playerid: {}'.format(playerid))
+            else:
+                logging.info('update error: code={}, url={}'.format(update_html['html_code'], update_html['html_url']))
 
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
     # 1694
-    update_playerinfo()
+    with PlayerSpider() as s:
+        pass

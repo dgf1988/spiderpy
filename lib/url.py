@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 import urllib.parse
 
-__all__ = ['parse']
+__all__ = ['UrlParse']
 
 
 class UrlParse(object):
