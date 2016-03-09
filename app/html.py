@@ -10,14 +10,12 @@ import lib.url
 import lib.orm
 
 
-__all__ = ['HtmlTable', 'HtmlDb', 'HtmlClient']
+__all__ = ['HtmlTable', 'HtmlDb', 'HtmlPage']
 
 
 @lib.orm.table(
         'html', fields='id html_url html_code html_encoding html_update', primarys='id', uniques=dict(url='html_url'))
 class HtmlTable(lib.orm.Table):
-    DefaultPath = 'D:/HtmlStor/'
-    DefaultEncoding = 'utf-8'
 
     id = lib.orm.AutoIntField()
 
@@ -27,67 +25,6 @@ class HtmlTable(lib.orm.Table):
 
     html_update = lib.orm.DatetimeField(current_timestamp=True, on_update=True)
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.text = ''
-
-    def get_title(self):
-        if self.text:
-            s = re.search(r'<title>(?P<title>.*?)</title>', self.text, re.IGNORECASE)
-            if s:
-                return s.group('title')
-
-    def get_filename(self):
-        url_parse = lib.url.parse(self['html_url'])
-        url_path = url_parse.path
-        url_host = url_parse.host
-        url_md5 = hashlib.md5(url_parse.str_url().encode()).hexdigest()
-        if url_path == '/' or url_path == '':
-            file_path = self.DefaultPath + url_host + '/' + url_md5[0:2]
-        else:
-            file_path = self.DefaultPath + url_host + '%s/' % url_path + url_md5[0:2]
-        return file_path, file_path+'/'+url_md5[2:]+'.html'
-
-    def get_page(self, timeout=30, encoding=None, allow_code=(200,)):
-        r = requests.get(self['html_url'], timeout=timeout)
-        if r.status_code in allow_code:
-            r.encoding = encoding or self['html_encoding'] or r.encoding
-            self['html_encoding'] = r.encoding
-            self['html_code'] = r.status_code
-            self.text = r.text
-            return r.status_code
-
-    def load_page(self):
-        file_path, file_name = self.get_filename()
-        if os.path.exists(file_name) and os.path.isfile(file_name):
-            with open(file_name, 'r', encoding=self['html_encoding'] or self.DefaultEncoding) as f:
-                self.text = f.read()
-                return 1
-
-    def save_page(self):
-        file_path, file_name = self.get_filename()
-        if not os.path.exists(file_path):
-            os.makedirs(file_path)
-        with open(file_name, 'w', encoding=self['html_encoding'] or self.DefaultEncoding) as f:
-            f.write(self.text)
-            return 1
-
-    def delete_page(self):
-        file_path, file_name = self.get_filename()
-        # 删除文件
-        if os.path.exists(file_name) and os.path.isfile(file_name):
-            os.remove(file_name)
-        # 删除文件夹
-        try:
-            os.removedirs(file_path)
-        except FileNotFoundError as e:
-            logging.warning(str(e))
-        except IOError as e:
-            logging.warning(str(e))
-        # 返回文件名
-        finally:
-            return 1
-
 
 class HtmlDb(lib.orm.Db):
     def __init__(self, user='root', password='guofeng001', db='html', host='localhost', port=3306):
@@ -95,46 +32,84 @@ class HtmlDb(lib.orm.Db):
         self.html = self.set(HtmlTable)
 
 
-class HtmlClient(object):
-    def __init__(self, db_config=None):
-        self.db = HtmlDb(**db_config) if db_config else HtmlDb()
+class HtmlPage(object):
+    DefaultPath = 'D:/HtmlStor/'
+    PatternTitle = r'<title>(?P<title>.*?)</title>'
 
-    def open_db(self):
-        self.db.open()
-        return self
+    def __init__(self, url, encoding=None):
+        self.url = url
+        self.encoding = encoding
+        self.code = 0
+        self.text = ''
 
-    def close_db(self):
-        self.db.close()
+    def __repr__(self):
+        return '<{}: code={}, encoding={}, title={}, url={}, length={}>'.format(
+            self.__class__.__name__, self.code, self.encoding, self.get_title(), self.url,
+            len(self.text) if self.text else 0
+        )
 
-    def __enter__(self):
-        return self.open_db()
+    def get(self, timeout=30):
+        if not self.url:
+            return None
+        r = requests.get(self.url, timeout=timeout)
+        r.encoding = self.encoding or r.encoding
+        self.code, self.encoding, self.text = r.status_code, r.encoding, r.text
+        return self.code
 
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        return self.close_db()
+    def save(self):
+        filepath, filename = self.get_filename(self.url)
+        if not os.path.exists(filepath):
+            os.makedirs(filepath)
+        with open(filename, 'w', encoding=self.encoding) as f:
+            f.write(self.text)
+            return 1
 
-    def get(self, primarykey=None, url=None, encoding=None, timeout=30, allow_code=(200,)):
-        gethtml = self.db.html.get(primarykey) if primarykey else self.db.html.get(html_url=url) if url else None
-        if not gethtml:
-            gethtml = HtmlTable(html_url=url)
-        if gethtml.get_page(encoding=encoding, timeout=timeout, allow_code=allow_code):
-            return gethtml
+    def update(self, timeout=30):
+        return self.get(timeout) and self.save() and self.code
 
-    def load(self, primarykey=None, url=None):
-        loadhtml = self.db.html.get(primarykey) if primarykey else self.db.html.get(html_url=url) if url else None
-        if loadhtml:
-            loadhtml.load_page()
-            return loadhtml
+    def load(self):
+        filepath, filename = self.get_filename(self.url)
+        if not os.path.exists(filename) or not os.path.isfile(filename):
+            return None
+        with open(filename, 'r', encoding=self.encoding) as f:
+            self.text = f.read()
+            return 1
 
-    def save(self, html_table):
-        html_table.save_page()
-        return self.db.html.save(html_table)
+    def delete(self):
+        filepath, filename = self.get_filename(self.url)
+        if os.path.exists(filename) and os.path.isfile(filename):
+            os.remove(filename)
+        try:
+            os.removedirs(filepath)
+        except FileNotFoundError as e:
+            logging.warning(str(e))
+        except IOError as e:
+            logging.warning(str(e))
+        finally:
+            return 1
 
-    def delete(self, html_table):
-        html_table.delete_page()
-        self.db.html.remove(html_table)
+    def get_title(self):
+        if not self.text:
+            return None
+        m_title = re.search(self.PatternTitle, self.text, re.IGNORECASE | re.MULTILINE)
+        if m_title:
+            return m_title.group('title')
+
+    @classmethod
+    def get_filename(cls, url):
+        url_parse = lib.url.parse(url)
+        url_path = url_parse.path
+        url_host = url_parse.host
+        url_md5 = hashlib.md5(url_parse.str_url().encode()).hexdigest()
+        if url_path == '/' or url_path == '':
+            file_path = cls.DefaultPath + url_host + '/' + url_md5[0:2]
+        else:
+            file_path = cls.DefaultPath + url_host + '%s/' % url_path + url_md5[0:2]
+        return file_path, file_path+'/'+url_md5[2:]+'.html'
 
 
 if __name__ == '__main__':
-    with HtmlClient() as client:
-        myhtml = client.load(url='http://www.weiqi163.com/')
-        print(myhtml.get_title(), myhtml)
+    page = HtmlPage('http://game.onegreen.net/weiqi/HTML/165283.html', 'gb18030')
+    print(page)
+    page.get()
+    print(page)

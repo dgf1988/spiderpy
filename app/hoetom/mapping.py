@@ -5,7 +5,7 @@ import enum
 import lib.orm
 
 
-__all__ = ['SEX', 'CountryTable', 'RankTable', 'PlayerTable', 'PlayeridTable', 'HoetomDb']
+__all__ = ['SEX', 'CountryTable', 'RankTable', 'PlayerTable', 'PlayeridTable', 'SgfTable', 'HoetomDb']
 
 
 class SEX(enum.IntEnum):
@@ -80,25 +80,19 @@ class PlayerTable(lib.orm.Table):
     p_rank = lib.orm.IntField(nullable=True)
     p_birth = lib.orm.DateField(nullable=True)
 
-    def to_str(self):
-        return '姓名：%s，性别：%s，国籍：%s，段位：%s，生日：%s' % \
-               (self['p_name'], SEX.from_obj(self['p_sex']).ch_str,
-                self['p_nat'],
-                self['p_rank'],
-                self['p_birth'])
 
-
-@lib.orm.table(name='sgf', fields='id s_time s_place s_white s_black s_name s_rule s_steps s_result', primarys='id')
+@lib.orm.table(name='sgf', fields='id s_white s_black s_name s_sgf s_time s_place s_rule s_result', primarys='id')
 class SgfTable(lib.orm.Table):
     id = lib.orm.AutoIntField()
-    s_time = lib.orm.DatetimeField()
-    s_place = lib.orm.CharField()
-    s_white = lib.orm.IntField()
-    s_black = lib.orm.IntField()
+    s_white = lib.orm.CharField()
+    s_black = lib.orm.CharField()
     s_name = lib.orm.CharField()
-    s_rule = lib.orm.CharField()
-    s_steps = lib.orm.TextField()
-    s_result = lib.orm.CharField()
+    s_sgf = lib.orm.TextField()
+    s_time = lib.orm.DatetimeField(nullable=True)
+    s_place = lib.orm.CharField(nullable=True)
+    s_rule = lib.orm.CharField(nullable=True)
+    s_result = lib.orm.CharField(nullable=True)
+    s_update = lib.orm.DatetimeField(current_timestamp=True, on_update=True)
 
 
 class PlayerData(object):
@@ -134,6 +128,7 @@ class HoetomDb(lib.orm.Db):
         self.rank = self.set(RankTable)
         self.country = self.set(CountryTable)
         self.playerid = self.set(PlayeridTable)
+        self.sgf = self.set(SgfTable)
 
     def get_player(self, primarykey=None, **kwargs):
         _player_ = self.player.get(primarykey, **kwargs)
@@ -148,4 +143,5 @@ class HoetomDb(lib.orm.Db):
             return _player_get_
 
 if __name__ == '__main__':
-    pass
+    with HoetomDb() as db:
+        db.sgf.create()
